@@ -1,0 +1,111 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Dark Theme (Default) ── */
+:root,
+[data-theme="dark"] {
+  --astra-bg: #0a0a0f;
+  --astra-surface: #12121a;
+  --astra-card: #16161f;
+  --astra-border: #1e1e2e;
+  --astra-muted: #2a2a3e;
+  --astra-text: #e2e8f0;
+  --astra-text-muted: #94a3b8;
+  --scrollbar-track: #12121a;
+  --scrollbar-thumb: #2a2a3e;
+  --scrollbar-hover: #3a3a5e;
+  color-scheme: dark;
+}
+
+/* ── Light Theme ── */
+[data-theme="light"] {
+  --astra-bg: #f3f4f8;
+  --astra-surface: #ffffff;
+  --astra-card: #ffffff;
+  --astra-border: #e2e5eb;
+  --astra-muted: #edf0f4;
+  --astra-text: #1e293b;
+  --astra-text-muted: #64748b;
+  --scrollbar-track: #f1f5f9;
+  --scrollbar-thumb: #cbd5e1;
+  --scrollbar-hover: #94a3b8;
+  color-scheme: light;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--astra-bg);
+  color: var(--astra-text);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.35s ease, color 0.35s ease;
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-hover);
+}
+
+/* Light theme card shadows */
+[data-theme="light"] .astra-card {
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+}
+
+@layer components {
+  .astra-card {
+    @apply bg-astra-card border border-astra-border rounded-xl;
+  }
+  .astra-input {
+    @apply bg-astra-surface border border-astra-border rounded-lg px-4 py-2.5 text-astra-text placeholder-astra-text-muted focus:outline-none focus:border-accent transition-colors w-full text-sm;
+  }
+  .astra-select {
+    @apply bg-astra-surface border border-astra-border rounded-lg px-4 py-2.5 text-astra-text focus:outline-none focus:border-accent transition-colors w-full text-sm;
+  }
+  .astra-btn-primary {
+    @apply bg-accent hover:bg-accent-hover text-white font-medium px-4 py-2.5 rounded-lg transition-colors disabled:opacity-50 text-sm;
+  }
+  .astra-btn-secondary {
+    @apply bg-astra-muted text-astra-text font-medium px-4 py-2.5 rounded-lg transition-colors text-sm border border-astra-border;
+  }
+  .astra-btn-ghost {
+    @apply text-astra-text-muted hover:text-astra-text hover:bg-astra-muted px-4 py-2.5 rounded-lg transition-colors text-sm;
+  }
+  .astra-btn-danger {
+    @apply bg-danger/10 hover:bg-danger/20 text-danger border border-danger/20 px-4 py-2.5 rounded-lg transition-colors text-sm;
+  }
+  .astra-label {
+    @apply text-xs font-medium text-astra-text-muted uppercase tracking-wider mb-1.5 block;
+  }
+  .astra-table-header {
+    @apply text-xs font-semibold text-astra-text-muted uppercase tracking-wider px-4 py-3 text-left;
+  }
+  .astra-table-row {
+    @apply border-b border-astra-border transition-colors;
+  }
+  .astra-table-row:hover {
+    background-color: var(--astra-surface);
+    opacity: 0.8;
+  }
+  .astra-table-cell {
+    @apply px-4 py-3 text-sm text-astra-text;
+  }
+}
