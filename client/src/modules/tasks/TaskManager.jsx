@@ -47,7 +47,11 @@ export default function TaskManager() {
   const [reportForm, setReportForm] = useState({ content:'', tasks_completed:0, tasks_in_progress:0, issues:'' });
   const [commentText, setCommentText] = useState('');
 
-  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'manager';
+  // Power score: admin(100), senior_manager(80), manager(60), senior_user(40), user(20)
+  const POWER_SCORES = { admin:100, senior_manager:80, manager:60, senior_user:40, user:20 };
+  const userPower = POWER_SCORES[currentUser?.role] || 0;
+  const isManager = userPower >= 60; // manager and above can see performance, announcements, etc.
+  const canAnnounce = userPower >= 60; // manager and above can publish/delete announcements
 
   useEffect(() => { load(); }, [tab]);
 
@@ -64,7 +68,7 @@ export default function TaskManager() {
     ]);
     setTasks(tasksData); setUsers(u); setAnnouncements(a); setDailyReports(dr);
 
-    if (isAdmin) {
+    if (isManager) {
       const s = await api('/api/tasks/stats/performance').then(r=>r.json()).catch(()=>[]);
       setPerfStats(s);
     }
@@ -119,7 +123,7 @@ export default function TaskManager() {
     { id:'tasks', label:t('tm_tasks'), icon: ClipboardList },
     { id:'announcements', label:t('tm_announcements'), icon: Megaphone },
     { id:'reports', label:t('tm_daily_reports'), icon: FileText },
-    ...(isAdmin ? [{ id:'performance', label:t('tm_performance'), icon: BarChart3 }] : []),
+    ...(isManager ? [{ id:'performance', label:t('tm_performance'), icon: BarChart3 }] : []),
   ];
 
   const pendingTasks = tasks.filter(tk=>tk.status==='pending');
@@ -148,7 +152,7 @@ export default function TaskManager() {
             <div className="flex gap-2">
               {dt.status === 'pending' && <button onClick={()=>updateTaskStatus(dt.id,'in_progress')} className="text-xs px-3 py-1.5 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20">{t('tm_start')}</button>}
               {dt.status === 'in_progress' && <button onClick={()=>updateTaskStatus(dt.id,'completed')} className="text-xs px-3 py-1.5 rounded-lg bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500/20">{t('tm_complete')}</button>}
-              {isAdmin && <button onClick={()=>deleteTask(dt.id)} className="text-xs px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20"><Trash2 size={12}/></button>}
+              {isManager && <button onClick={()=>deleteTask(dt.id)} className="text-xs px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20"><Trash2 size={12}/></button>}
             </div>
           </div>
 
@@ -217,7 +221,7 @@ export default function TaskManager() {
               <option value="">{t('tm_all_statuses')}</option>
               {Object.entries(STATUS).map(([k,v])=><option key={k} value={k}>{v}</option>)}
             </select>
-            {isAdmin && (
+            {isManager && (
               <select className="astra-select text-xs flex-1 min-w-[120px]" value={filter.assigned_to} onChange={e=>{setFilter(f=>({...f,assigned_to:e.target.value})); setTimeout(load,0);}}>
                 <option value="">{t('tm_all_employees')}</option>
                 {users.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
@@ -275,7 +279,7 @@ export default function TaskManager() {
       {/* ===== ANNOUNCEMENTS TAB ===== */}
       {tab === 'announcements' && (
         <div className="space-y-3">
-          {isAdmin && (
+          {isManager && (
             <div className="flex justify-end">
               <button onClick={()=>setShowAnnModal(true)} className="astra-btn-primary text-xs flex items-center gap-1.5"><Plus size={14}/> {t('tm_new_announcement')}</button>
             </div>
@@ -289,7 +293,7 @@ export default function TaskManager() {
                   <p className="text-xs text-astra-text-muted mt-1 leading-relaxed">{a.content}</p>
                   <p className="text-[10px] text-astra-text-muted mt-2">— {a.created_by_name} · {new Date(a.created_at).toLocaleDateString(locale)}</p>
                 </div>
-                {isAdmin && <button onClick={async()=>{await api(`/api/tasks/announcements/${a.id}`,{method:'DELETE'});load();}} className="text-astra-text-muted hover:text-red-400"><X size={14}/></button>}
+                {isManager && <button onClick={async()=>{await api(`/api/tasks/announcements/${a.id}`,{method:'DELETE'});load();}} className="text-astra-text-muted hover:text-red-400"><X size={14}/></button>}
               </div>
             </div>
           ))}
@@ -328,7 +332,7 @@ export default function TaskManager() {
       )}
 
       {/* ===== PERFORMANCE TAB (Admin only) ===== */}
-      {tab === 'performance' && isAdmin && (
+      {tab === 'performance' && isManager && (
         <div className="space-y-4">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {[

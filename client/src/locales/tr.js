@@ -32,7 +32,7 @@ const tr = {
   settings_title: 'Ayarlar', users: 'Kullanıcılar', profile_password: 'Profil & Şifre',
   add_user: 'Kullanıcı Ekle', edit_user: 'Kullanıcı Düzenle', new_user: 'Yeni Kullanıcı',
   full_name: 'Ad Soyad', phone: 'Telefon', department: 'Departman', role: 'Rol',
-  role_admin: 'Yönetici', role_manager: 'Müdür', role_user: 'Kullanıcı',
+  role_admin: 'Admin', role_senior_manager: 'Kıdemli Yönetici', role_manager: 'Yönetici', role_senior_user: 'Kıdemli Kullanıcı', role_user: 'Kullanıcı',
   change_password: 'Şifremi Değiştir', current_password: 'Mevcut Şifre',
   new_password: 'Yeni Şifre', new_password_confirm: 'Yeni Şifre (Tekrar)',
   new_password_hint: 'Yeni Şifre (boş = değişmez)',

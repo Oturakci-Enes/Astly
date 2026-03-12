@@ -32,7 +32,7 @@ const en = {
   settings_title: 'Settings', users: 'Users', profile_password: 'Profile & Password',
   add_user: 'Add User', edit_user: 'Edit User', new_user: 'New User',
   full_name: 'Full Name', phone: 'Phone', department: 'Department', role: 'Role',
-  role_admin: 'Administrator', role_manager: 'Manager', role_user: 'User',
+  role_admin: 'Admin', role_senior_manager: 'Senior Manager', role_manager: 'Manager', role_senior_user: 'Senior User', role_user: 'User',
   change_password: 'Change Password', current_password: 'Current Password',
   new_password: 'New Password', new_password_confirm: 'Confirm Password',
   new_password_hint: 'New Password (blank = no change)',

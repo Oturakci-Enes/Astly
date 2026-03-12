@@ -1,12 +1,13 @@
 import express from 'express';
 import db from '../db/database.js';
 import bcrypt from 'bcryptjs';
+import { canManageUsers, isValidRole, getPowerScore } from '../helpers/powerScore.js';
 const router = express.Router();
 
 const ALL_MODULES = ['dashboard', 'tasks', 'messaging'];
 
 function requireAdmin(req, res, next) {
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Sadece yönetici' });
+  if (!canManageUsers(req.user.role)) return res.status(403).json({ error: 'Sadece admin' });
   next();
 }
 
@@ -23,11 +24,18 @@ router.get('/users', (req, res) => {
 // CREATE user
 router.post('/users', requireAdmin, (req, res) => {
   const { name, email, password, role, department, phone } = req.body;
+
+  // Validate role
+  const userRole = role || 'user';
+  if (!isValidRole(userRole)) {
+    return res.status(400).json({ error: 'Geçersiz rol' });
+  }
+
   const hashed = bcrypt.hashSync(password, 10);
   try {
     const r = db
       .prepare('INSERT INTO users (name,email,password,role,department,phone,organization_id) VALUES (?,?,?,?,?,?,?)')
-      .run(name, email, hashed, role || 'user', department, phone, req.user.organization_id);
+      .run(name, email, hashed, userRole, department, phone, req.user.organization_id);
     const userId = r.lastInsertRowid;
     const ins = db.prepare('INSERT INTO user_permissions (user_id, module, has_access) VALUES (?, ?, 1)');
     for (const mod of ALL_MODULES) ins.run(userId, mod);
@@ -53,6 +61,12 @@ router.put('/users/:id', requireAdmin, (req, res) => {
   if (targetId === null) return;
 
   const { name, email, role, department, phone, status, password } = req.body;
+
+  // Validate role if provided
+  if (role && !isValidRole(role)) {
+    return res.status(400).json({ error: 'Geçersiz rol' });
+  }
+
   if (password) {
     const hashed = bcrypt.hashSync(password, 10);
     db.prepare('UPDATE users SET name=COALESCE(?,name),email=COALESCE(?,email),password=?,role=COALESCE(?,role),department=COALESCE(?,department),phone=COALESCE(?,phone),status=COALESCE(?,status) WHERE id=? AND organization_id=?')

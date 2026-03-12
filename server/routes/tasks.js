@@ -1,35 +1,31 @@
 import express from 'express';
 import db from '../db/database.js';
+import { getPowerScore, canSee, canAssignTo, canDeleteTask, canPublishAnnouncement, canDeleteAnnouncement, getVisibleRolesSQL } from '../helpers/powerScore.js';
 const router = express.Router();
 
 // =====================
 // TASKS
 // =====================
 
-// List tasks (Hiyerarşik görünürlük eklendi)
+// List tasks (Power-score-based visibility)
 router.get('/', (req, res) => {
   const { status, assigned_to, priority } = req.query;
   const orgId = req.user.organization_id;
   const userRole = req.user.role;
   const userId = req.user.id;
+  const userPower = getPowerScore(userRole);
 
   const where = ['org_user.organization_id = ?'];
   const params = [orgId];
 
-  // --- HIYERARŞİ KURALI ---
-  if (userRole === 'manager') {
-    // Yöneticiler: 
-    // 1. 'user' rolündeki herkesin görevlerini görür.
-    // 2. Kendisine atanan görevleri (Admin'den veya diğer Yöneticiden gelen) görür.
-    // 3. Kendi atadığı (başkasına verdiği) görevleri görür.
-    where.push('(u1.role = "user" OR t.assigned_to = ? OR t.assigned_by = ?)');
+  // Power score visibility:
+  // Admin(100): sees all tasks
+  // Others: see tasks assigned to users with equal or lower power, plus own tasks
+  if (userPower < 100) {
+    const visibleRoles = getVisibleRolesSQL(userRole);
+    where.push(`(u1.role IN (${visibleRoles}) OR t.assigned_to = ? OR t.assigned_by = ?)`);
     params.push(userId, userId);
-  } else if (userRole === 'user') {
-    // Kullanıcı: Sadece kendine atananları görür.
-    where.push('t.assigned_to = ?');
-    params.push(userId);
   }
-  // Admin ise kısıtlama yok.
 
   if (status) { where.push('t.status = ?'); params.push(status); }
   if (assigned_to) { where.push('t.assigned_to = ?'); params.push(assigned_to); }
@@ -83,13 +79,11 @@ router.get('/:id', (req, res) => {
   res.json({ ...task, comments });
 });
 
-// Create task (Çoklu görev verme desteği eklendi)
+// Create task (Power-score-based assignment validation)
 router.post('/', (req, res) => {
   const { title, description, assigned_to, priority, due_date, category } = req.body;
   if (!title) return res.status(400).json({ error: 'Görev başlığı gerekli' });
 
-  // assigned_to'yu her zaman bir liste (array) gibi ele alalım
-  // Eğer tek bir id geldiyse onu [id] yapar, liste geldiyse olduğu gibi bırakır.
   const assignees = Array.isArray(assigned_to) ? assigned_to : [assigned_to];
 
   const insertStmt = db.prepare(`
@@ -97,17 +91,20 @@ router.post('/', (req, res) => {
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
 
-  // Güvenli işlem (Transaction) başlatıyoruz: Ya hepsi kaydedilir ya hiçbiri.
   const createTasks = db.transaction((users) => {
     for (const userId of users) {
       if (userId) {
-        // Kullanıcının seninle aynı şirkette (organization) olup olmadığını kontrol et
-        const targetUser = db.prepare('SELECT id FROM users WHERE id = ? AND organization_id = ?')
+        const targetUser = db.prepare('SELECT id, role FROM users WHERE id = ? AND organization_id = ?')
           .get(userId, req.user.organization_id);
 
-        if (targetUser) {
-          insertStmt.run(title, description || null, userId, req.user.id, priority || 'medium', due_date || null, category || null);
+        if (!targetUser) continue;
+
+        // Power score check: can only assign to equal or lower power
+        if (!canAssignTo(req.user.role, targetUser.role)) {
+          continue; // Skip users with higher power score
         }
+
+        insertStmt.run(title, description || null, userId, req.user.id, priority || 'medium', due_date || null, category || null);
       }
     }
   });
@@ -133,10 +130,13 @@ router.put('/:id', (req, res) => {
   `).get(req.params.id, orgId);
   if (!task) return res.status(404).json({ error: 'Görev bulunamadı' });
 
-  // Verify assigned_to user belongs to same organization
+  // Verify assigned_to user belongs to same organization and power score allows assignment
   if (assigned_to) {
-    const targetUser = db.prepare('SELECT id FROM users WHERE id = ? AND organization_id = ?').get(assigned_to, orgId);
-    if (!targetUser) return res.status(400).json({ error: 'Gecersiz atanan kullanici' });
+    const targetUser = db.prepare('SELECT id, role FROM users WHERE id = ? AND organization_id = ?').get(assigned_to, orgId);
+    if (!targetUser) return res.status(400).json({ error: 'Geçersiz atanan kullanıcı' });
+    if (!canAssignTo(req.user.role, targetUser.role)) {
+      return res.status(403).json({ error: 'Bu kullanıcıya görev atama yetkiniz yok' });
+    }
   }
 
   const completedAt = status === 'completed' && task.status !== 'completed'
@@ -160,13 +160,11 @@ router.put('/:id', (req, res) => {
   res.json({ message: 'Görev güncellendi' });
 });
 
-// Delete task - Hiyerarşik koruma ve Admin ortaklığı eklendi
+// Delete task - Power-score-based armor system
 router.delete('/:id', (req, res) => {
   const orgId = req.user.organization_id;
-  const requesterId = req.user.id;
   const requesterRole = req.user.role;
 
-  // Görevi ve görevi verenin rolünü sorguluyoruz
   const task = db.prepare(`
     SELECT t.*, u_creator.role as creator_role, u_creator.id as creator_id
     FROM tasks t
@@ -176,21 +174,10 @@ router.delete('/:id', (req, res) => {
 
   if (!task) return res.status(404).json({ error: 'Görev bulunamadı' });
 
-  // --- HIYERARŞİ VE REDDETME KURALLARI ---
-
-  // 1. KURAL: Admin zırhı (Admin verdiyse alt kademe silemez)
-  if (task.creator_role === 'admin' && requesterRole !== 'admin') {
-    return res.status(403).json({ error: 'Admin tarafından verilen görevler reddedilemez veya silinemez.' });
+  // Power score armor: can only delete tasks created by someone with equal or lower power
+  if (!canDeleteTask(requesterRole, task.creator_role)) {
+    return res.status(403).json({ error: 'Üst kademe tarafından verilen görevleri reddedemez veya silemezsiniz.' });
   }
-
-  // 2. KURAL: Yönetici zırhı (Yönetici verdiyse kullanıcı silemez)
-  if (task.creator_role === 'manager' && requesterRole === 'user') {
-    return res.status(403).json({ error: 'Yöneticiden gelen görevi reddetme yetkiniz yok.' });
-  }
-
-  // NOT: 
-  // - Adminler birbirinin görevini silebilir (requesterRole === 'admin' olduğu için takılmaz).
-  // - Kullanıcılar birbirinin görevini silebilir (creator_role 'user' olduğu için takılmaz).
 
   db.prepare('DELETE FROM task_comments WHERE task_id = ?').run(task.id);
   db.prepare('DELETE FROM tasks WHERE id = ?').run(task.id);
@@ -217,25 +204,19 @@ router.post('/:id/comments', (req, res) => {
   res.status(201).json({ message: 'Yorum eklendi' });
 });
 
-// Performance stats - Hiyerarşik filtreleme ve Admin ortaklığı desteği
+// Performance stats - Power-score-based filtering
 router.get('/stats/performance', (req, res) => {
   const orgId = req.user.organization_id;
   const userRole = req.user.role;
   const userId = req.user.id;
+  const userPower = getPowerScore(userRole);
 
-  // Tüm aktif kullanıcıları çek
   let users = db.prepare("SELECT id, name, role, department FROM users WHERE status = 'active' AND organization_id = ?").all(orgId);
 
-  // --- HIYERARŞİYE GÖRE KULLANICI LİSTESİNİ FİLTRELE ---
-  if (userRole === 'manager') {
-    // Yönetici: Sadece 'user' rolündekileri ve kendisini görebilir. 
-    // Diğer yöneticiler ve adminler elenir.
-    users = users.filter(u => u.role === 'user' || u.id === userId);
-  } else if (userRole === 'user') {
-    // Kullanıcı: Sadece kendi satırını görebilir.
-    users = users.filter(u => u.id === userId);
+  // Filter by power score: can only see stats of users with equal or lower power + self
+  if (userPower < 100) {
+    users = users.filter(u => canSee(userRole, u.role) || u.id === userId);
   }
-  // Admin ise hiçbir filtreye takılmaz; diğer admin ortaklarını ve tüm personeli görür.
 
   const stats = users.map(u => {
     const total = db.prepare('SELECT COUNT(*) as c FROM tasks WHERE assigned_to = ?').get(u.id).c;
@@ -280,8 +261,8 @@ router.get('/announcements/list', (req, res) => {
 router.post('/announcements', (req, res) => {
   const { title, content, priority, expires_at } = req.body;
 
-  // --- YETKİ KONTROLÜ ---
-  if (req.user.role === 'user') {
+  // Power score check: only manager(60) and above can publish
+  if (!canPublishAnnouncement(req.user.role)) {
     return res.status(403).json({ error: 'Duyuru yayınlama yetkiniz yok.' });
   }
 
@@ -296,9 +277,8 @@ router.post('/announcements', (req, res) => {
 router.delete('/announcements/:id', (req, res) => {
   const orgId = req.user.organization_id;
 
-  // --- YETKİ KONTROLÜ ---
-  // Sadece Admin ve Manager duyuru silebilir
-  if (req.user.role === 'user') {
+  // Power score check: only manager(60) and above can delete
+  if (!canDeleteAnnouncement(req.user.role)) {
     return res.status(403).json({ error: 'Duyuru silme yetkiniz yok.' });
   }
 
@@ -318,28 +298,23 @@ router.delete('/announcements/:id', (req, res) => {
 // DAILY REPORTS
 // =====================
 
-// Daily Reports list - Hiyerarşik filtreleme eklendi
+// Daily Reports list - Power-score-based filtering
 router.get('/daily-reports/list', (req, res) => {
   const { user_id, date } = req.query;
   const orgId = req.user.organization_id;
   const userRole = req.user.role;
   const userId = req.user.id;
+  const userPower = getPowerScore(userRole);
 
   const where = ['u.organization_id = ?'];
   const params = [orgId];
 
-  // --- HIYERARŞİ FİLTRESİ ---
-  if (userRole === 'manager') {
-    // Yöneticiler: personellerin (user) raporlarını ve kendi (userId) raporlarını görür.
-    // 'u.role' yerine tablo adını açıkça belirterek (u.role) hatayı engelliyoruz.
-    where.push('(u.role = "user" OR dr.user_id = ?)');
-    params.push(userId);
-  } else if (userRole === 'user') {
-    // Kullanıcı: Sadece kendi raporlarını görebilir.
-    where.push('dr.user_id = ?');
+  // Power score filter: see reports of users with equal or lower power + own
+  if (userPower < 100) {
+    const visibleRoles = getVisibleRolesSQL(userRole);
+    where.push(`(u.role IN (${visibleRoles}) OR dr.user_id = ?)`);
     params.push(userId);
   }
-  // Admin ise kısıtlama yok, her şeyi görür.
 
   if (user_id) { where.push('dr.user_id = ?'); params.push(user_id); }
   if (date) { where.push('dr.report_date = ?'); params.push(date); }
@@ -376,26 +351,21 @@ router.post('/daily-reports', (req, res) => {
   res.status(201).json({ message: 'Rapor gönderildi' });
 });
 
-// Users list (Görev atama listesi) - Hiyerarşik kısıtlama eklendi
+// Users list (Task assignment list) - Power-score-based filtering
 router.get('/users/list', (req, res) => {
   const orgId = req.user.organization_id;
   const userRole = req.user.role;
   const userId = req.user.id;
+  const userPower = getPowerScore(userRole);
 
   let query = "SELECT id, name, email, role, department FROM users WHERE status = 'active' AND organization_id = ?";
-  let params = [orgId];
+  const params = [orgId];
 
-  // --- KİMLERE GÖREV VEREBİLİR? ---
-  if (userRole === 'manager') {
-    // Yöneticiler: Kullanıcıları, diğer yöneticileri ve kendilerini görebilir. 
-    // Sadece Adminler bu listeden gizlenir.
-    query += " AND (role = 'user' OR role = 'manager' OR id = ?)";
-    params.push(userId);
-  } else if (userRole === 'user') {
-    // Kullanıcı: Diğer kullanıcılara görev verebilir.
-    query += " AND role = 'user'";
+  // Power score filter: can assign to users with equal or lower power
+  if (userPower < 100) {
+    const visibleRoles = getVisibleRolesSQL(userRole);
+    query += ` AND role IN (${visibleRoles})`;
   }
-  // Admin: Herkese görev verebilir (Hiçbir kısıtlama eklenmez).
 
   const users = db.prepare(query + " ORDER BY name").all(...params);
   res.json(users);

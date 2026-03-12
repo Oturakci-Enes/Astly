@@ -124,7 +124,7 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
             </div>
             <div className="min-w-0">
               <p className="text-xs font-semibold text-astra-text truncate">{user?.name}</p>
-              <p className="text-[10px] text-astra-text-muted truncate capitalize">{user?.role}</p>
+              <p className="text-[10px] text-astra-text-muted truncate">{t(`role_${user?.role}`) || user?.role}</p>
             </div>
           </div>
         )}

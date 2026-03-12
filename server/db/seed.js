@@ -11,13 +11,13 @@ const organizations = [
   { id: 2, name: 'Second Company', slug: 'second-co' },
 ];
 
-// Users
+// Users - 5 Roles: admin(100), senior_manager(80), manager(60), senior_user(40), user(20)
 const users = [
   // Org 1 - Astly Demo
   { name: 'Admin', email: 'info@astly.app', password: hash('admin123'), role: 'admin', department: 'Management', organization_id: 1 },
-  { name: 'Ahmet Yılmaz', email: 'ahmet@astly.app', password: hash('123456'), role: 'manager', department: 'Operations', organization_id: 1 },
-  { name: 'Zeynep Kaya', email: 'zeynep@astly.app', password: hash('123456'), role: 'user', department: 'Sales', organization_id: 1 },
-  { name: 'Mehmet Demir', email: 'mehmet@astly.app', password: hash('123456'), role: 'user', department: 'Warehouse', organization_id: 1 },
+  { name: 'Ahmet Yılmaz', email: 'ahmet@astly.app', password: hash('123456'), role: 'senior_manager', department: 'Operations', organization_id: 1 },
+  { name: 'Zeynep Kaya', email: 'zeynep@astly.app', password: hash('123456'), role: 'manager', department: 'Sales', organization_id: 1 },
+  { name: 'Mehmet Demir', email: 'mehmet@astly.app', password: hash('123456'), role: 'senior_user', department: 'Warehouse', organization_id: 1 },
   { name: 'Ayşe Çelik', email: 'ayse@astly.app', password: hash('123456'), role: 'user', department: 'Accounting', organization_id: 1 },
   // Org 2 - Second Company
   { name: 'Second Admin', email: 'admin@secondco.com', password: hash('admin123'), role: 'admin', department: 'Management', organization_id: 2 },

@@ -96,7 +96,7 @@ export default function Settings() {
                   <tr key={u.id} className="astra-table-row">
                     <td className="astra-table-cell text-xs font-medium">{u.name}</td>
                     <td className="astra-table-cell text-xs text-astra-text-muted">{u.email}</td>
-                    <td className="astra-table-cell text-xs capitalize">{u.role}</td>
+                    <td className="astra-table-cell text-xs">{t(`role_${u.role}`) || u.role}</td>
                     <td className="astra-table-cell text-xs text-astra-text-muted">{u.department || '—'}</td>
                     <td className="astra-table-cell">
                       <span className={`text-[10px] px-2 py-0.5 rounded-full ${u.status==='active'?'bg-green-500/10 text-green-400 border border-green-500/20':'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
@@ -200,7 +200,9 @@ export default function Settings() {
                   <label className="astra-label">{t('role')}</label>
                   <select className="astra-select" value={form.role} onChange={e=>setForm(f=>({...f,role:e.target.value}))}>
                     <option value="admin">{t('role_admin')}</option>
+                    <option value="senior_manager">{t('role_senior_manager')}</option>
                     <option value="manager">{t('role_manager')}</option>
+                    <option value="senior_user">{t('role_senior_user')}</option>
                     <option value="user">{t('role_user')}</option>
                   </select>
                 </div>
