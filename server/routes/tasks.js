@@ -18,9 +18,12 @@ router.get('/', (req, res) => {
 
   // --- HIYERARŞİ KURALI ---
   if (userRole === 'manager') {
-    // Yönetici: Sadece 'user' rolündekileri veya kendi aldığı görevleri görür.
-    where.push('(u1.role = "user" OR t.assigned_to = ?)');
-    params.push(userId);
+    // Yöneticiler: 
+    // 1. 'user' rolündeki herkesin görevlerini görür.
+    // 2. Kendisine atanan görevleri (Admin'den veya diğer Yöneticiden gelen) görür.
+    // 3. Kendi atadığı (başkasına verdiği) görevleri görür.
+    where.push('(u1.role = "user" OR t.assigned_to = ? OR t.assigned_by = ?)');
+    params.push(userId, userId);
   } else if (userRole === 'user') {
     // Kullanıcı: Sadece kendine atananları görür.
     where.push('t.assigned_to = ?');
@@ -327,7 +330,8 @@ router.get('/daily-reports/list', (req, res) => {
 
   // --- HIYERARŞİ FİLTRESİ ---
   if (userRole === 'manager') {
-    // Yönetici: Sadece 'user' rolündekileri veya kendisinin raporlarını görebilir.
+    // Yöneticiler: personellerin (user) raporlarını ve kendi (userId) raporlarını görür.
+    // 'u.role' yerine tablo adını açıkça belirterek (u.role) hatayı engelliyoruz.
     where.push('(u.role = "user" OR dr.user_id = ?)');
     params.push(userId);
   } else if (userRole === 'user') {
@@ -383,14 +387,15 @@ router.get('/users/list', (req, res) => {
 
   // --- KİMLERE GÖREV VEREBİLİR? ---
   if (userRole === 'manager') {
-    // Yönetici: Diğer yöneticilere ve adminlere görev atayamaz, sadece kullanıcılara ve kendine atayabilir.
-    query += " AND (role = 'user' OR id = ?)";
+    // Yöneticiler: Kullanıcıları, diğer yöneticileri ve kendilerini görebilir. 
+    // Sadece Adminler bu listeden gizlenir.
+    query += " AND (role = 'user' OR role = 'manager' OR id = ?)";
     params.push(userId);
   } else if (userRole === 'user') {
-    // Kullanıcı: Sadece diğer kullanıcılara görev verebilir.
+    // Kullanıcı: Diğer kullanıcılara görev verebilir.
     query += " AND role = 'user'";
   }
-  // Admin: Herkese görev verebilir.
+  // Admin: Herkese görev verebilir (Hiçbir kısıtlama eklenmez).
 
   const users = db.prepare(query + " ORDER BY name").all(...params);
   res.json(users);
