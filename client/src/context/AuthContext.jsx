@@ -71,7 +71,7 @@ export function AuthProvider({ children }) {
   const hasAccess = (moduleId) => {
     if (!user) return false;
     if (user.role === 'admin') return true;
-    if (!user.permissions) return true;
+    if (!user.permissions || !Array.isArray(user.permissions)) return false;
     return user.permissions.includes(moduleId);
   };
 

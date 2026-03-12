@@ -36,7 +36,7 @@ export default function Dashboard() {
   const STATUS_COLOR = { pending:'text-yellow-400', in_progress:'text-blue-400', completed:'text-green-400' };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       {/* Stat Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         {statCards.map(s => (

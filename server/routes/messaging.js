@@ -7,11 +7,30 @@ import db from '../db/database.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const ALLOWED_MIMETYPES = [
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+  'video/mp4', 'video/webm', 'video/quicktime',
+  'audio/mpeg', 'audio/webm', 'audio/ogg', 'audio/wav',
+];
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, path.join(__dirname, '../uploads')),
-  filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase().replace(/[^a-z0-9.]/g, '');
+    cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);
+  }
 });
-const upload = multer({ storage });
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  fileFilter: (req, file, cb) => {
+    if (ALLOWED_MIMETYPES.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Desteklenmeyen dosya tipi'), false);
+    }
+  }
+});
 
 const router = express.Router();
 
@@ -63,6 +82,16 @@ router.post('/conversations', (req, res) => {
 
   if (!member_ids || !member_ids.length) {
     return res.status(400).json({ error: 'En az bir üye seçin' });
+  }
+
+  // Verify all members belong to the same organization
+  const orgId = req.user.organization_id;
+  const placeholders = member_ids.map(() => '?').join(',');
+  const validMembers = db.prepare(
+    `SELECT id FROM users WHERE id IN (${placeholders}) AND organization_id = ? AND status = 'active'`
+  ).all(...member_ids, orgId);
+  if (validMembers.length !== member_ids.length) {
+    return res.status(400).json({ error: 'Gecersiz veya yetkisiz uyeler' });
   }
 
   if (type === 'direct' && member_ids.length === 1) {

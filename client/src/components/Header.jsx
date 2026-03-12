@@ -1,14 +1,22 @@
-import { Bell, Search } from 'lucide-react';
+import { Bell, Search, Menu } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useLocale } from '../context/LocaleContext';
 
-export default function Header({ title }) {
+export default function Header({ title, onMenuToggle }) {
   const { user } = useAuth();
   const { t } = useLocale();
   return (
-    <header className="h-14 bg-astra-surface border-b border-astra-border flex items-center justify-between px-6 sticky top-0 z-20 flex-shrink-0">
-      <h1 className="text-sm font-semibold text-astra-text">{title}</h1>
+    <header className="h-14 bg-astra-surface border-b border-astra-border flex items-center justify-between px-4 md:px-6 sticky top-0 z-20 flex-shrink-0">
       <div className="flex items-center gap-3">
+        <button
+          onClick={onMenuToggle}
+          className="md:hidden p-2 text-astra-text-muted hover:text-astra-text hover:bg-astra-muted rounded-lg transition-colors"
+        >
+          <Menu size={18} />
+        </button>
+        <h1 className="text-sm font-semibold text-astra-text">{title}</h1>
+      </div>
+      <div className="flex items-center gap-2 md:gap-3">
         <div className="relative hidden md:block">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-astra-text-muted" size={13} />
           <input

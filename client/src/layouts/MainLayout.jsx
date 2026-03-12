@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
 import Header from '../components/Header';
@@ -13,18 +13,37 @@ const pageTitleKeys = {
 
 export default function MainLayout() {
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
   const { t } = useLocale();
   const titleKey = pageTitleKeys[location.pathname];
   const title = titleKey ? t(titleKey) : 'Astly';
 
+  // Close mobile sidebar on route change
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [location.pathname]);
+
   return (
     <div className="min-h-screen bg-astra-bg">
-      <Sidebar collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
+      {/* Mobile overlay */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+      <Sidebar
+        collapsed={collapsed}
+        onToggle={() => setCollapsed(!collapsed)}
+        mobileOpen={mobileOpen}
+        onMobileClose={() => setMobileOpen(false)}
+      />
       <div
-        className={`transition-all duration-300 ${collapsed ? 'ml-[72px]' : 'ml-64'} min-h-screen flex flex-col`}
+        className={`transition-all duration-300 min-h-screen flex flex-col ml-0 ${collapsed ? 'md:ml-[72px]' : 'md:ml-64'}`}
       >
-        <Header title={title} />
+        <Header title={title} onMenuToggle={() => setMobileOpen(!mobileOpen)} />
         <main className="flex-1">
           <Outlet />
         </main>

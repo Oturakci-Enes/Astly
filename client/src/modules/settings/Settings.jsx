@@ -8,7 +8,7 @@ export default function Settings() {
   const { api, user: currentUser } = useAuth();
   const { t, locale, setLocale, availableLocales } = useLocale();
   const { theme, setTheme, themes } = useTheme();
-  const [tab, setTab] = useState('users');
+  const [tab, setTab] = useState(currentUser?.role === 'admin' ? 'users' : 'profile');
   const [users, setUsers] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [editUser, setEditUser] = useState(null);
@@ -57,14 +57,14 @@ export default function Settings() {
   ];
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="p-4 md:p-6 space-y-4">
       <h1 className="text-xl font-bold text-astra-text">{t('settings_title')}</h1>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-astra-surface border border-astra-border rounded-xl p-1">
+      <div className="flex gap-1 bg-astra-surface border border-astra-border rounded-xl p-1 overflow-x-auto">
         {tabs.map(tb =>
           <button key={tb.id} onClick={()=>setTab(tb.id)}
-            className={`flex-1 flex items-center justify-center gap-2 text-xs font-medium py-2 rounded-lg transition-all ${
+            className={`flex-1 flex items-center justify-center gap-1.5 md:gap-2 text-[11px] md:text-xs font-medium py-2 rounded-lg transition-all whitespace-nowrap ${
               tab === tb.id ? 'bg-accent/15 text-accent border border-accent/25' : 'text-astra-text-muted hover:text-astra-text'
             }`}>
             <tb.icon size={14}/> {tb.label}
@@ -81,7 +81,8 @@ export default function Settings() {
             </button>
           </div>
           <div className="astra-card overflow-hidden">
-            <table className="w-full">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[500px]">
               <thead className="bg-astra-bg border-b border-astra-border">
                 <tr>
                   {[t('full_name'),t('email'),t('role'),t('department'),t('status')].map(h=>
@@ -109,6 +110,7 @@ export default function Settings() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       )}
@@ -181,7 +183,7 @@ export default function Settings() {
               <button onClick={()=>setShowModal(false)} className="text-astra-text-muted hover:text-astra-text"><X size={16}/></button>
             </div>
             <form onSubmit={handleSubmit} className="p-4 space-y-3">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="astra-label">{t('full_name')}</label>
                   <input required className="astra-input" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))}/>

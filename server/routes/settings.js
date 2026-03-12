@@ -35,31 +35,58 @@ router.post('/users', requireAdmin, (req, res) => {
   } catch(e) { res.status(400).json({ error: 'E-posta zaten kullanımda' }); }
 });
 
+// Helper: verify target user belongs to same organization
+function verifyOrgMembership(req, res) {
+  const targetId = Number(req.params.id);
+  const orgId = req.user.organization_id;
+  const target = db.prepare('SELECT id FROM users WHERE id = ? AND organization_id = ?').get(targetId, orgId);
+  if (!target) {
+    res.status(404).json({ error: 'Kullanıcı bulunamadı' });
+    return null;
+  }
+  return targetId;
+}
+
 // UPDATE user
 router.put('/users/:id', requireAdmin, (req, res) => {
+  const targetId = verifyOrgMembership(req, res);
+  if (targetId === null) return;
+
   const { name, email, role, department, phone, status, password } = req.body;
   if (password) {
     const hashed = bcrypt.hashSync(password, 10);
-    db.prepare('UPDATE users SET name=COALESCE(?,name),email=COALESCE(?,email),password=?,role=COALESCE(?,role),department=COALESCE(?,department),phone=COALESCE(?,phone),status=COALESCE(?,status) WHERE id=?')
-      .run(name,email,hashed,role,department,phone,status,req.params.id);
+    db.prepare('UPDATE users SET name=COALESCE(?,name),email=COALESCE(?,email),password=?,role=COALESCE(?,role),department=COALESCE(?,department),phone=COALESCE(?,phone),status=COALESCE(?,status) WHERE id=? AND organization_id=?')
+      .run(name,email,hashed,role,department,phone,status,targetId,req.user.organization_id);
   } else {
-    db.prepare('UPDATE users SET name=COALESCE(?,name),email=COALESCE(?,email),role=COALESCE(?,role),department=COALESCE(?,department),phone=COALESCE(?,phone),status=COALESCE(?,status) WHERE id=?')
-      .run(name,email,role,department,phone,status,req.params.id);
+    db.prepare('UPDATE users SET name=COALESCE(?,name),email=COALESCE(?,email),role=COALESCE(?,role),department=COALESCE(?,department),phone=COALESCE(?,phone),status=COALESCE(?,status) WHERE id=? AND organization_id=?')
+      .run(name,email,role,department,phone,status,targetId,req.user.organization_id);
   }
   res.json({ message: 'Kullanıcı güncellendi' });
 });
 
 // DELETE user
 router.delete('/users/:id', requireAdmin, (req, res) => {
-  const targetId = Number(req.params.id);
+  const targetId = verifyOrgMembership(req, res);
+  if (targetId === null) return;
   if (targetId === req.user.id) return res.status(400).json({ error: 'Kendinizi silemezsiniz' });
-  db.prepare('DELETE FROM users WHERE id=?').run(targetId);
+
+  const deleteUser = db.transaction(() => {
+    db.prepare('DELETE FROM user_permissions WHERE user_id=?').run(targetId);
+    db.prepare('DELETE FROM task_comments WHERE user_id=?').run(targetId);
+    db.prepare('DELETE FROM conversation_members WHERE user_id=?').run(targetId);
+    db.prepare('DELETE FROM daily_reports WHERE user_id=?').run(targetId);
+    db.prepare('DELETE FROM users WHERE id=? AND organization_id=?').run(targetId, req.user.organization_id);
+  });
+  deleteUser();
   res.json({ message: 'Kullanıcı silindi' });
 });
 
 // GET user permissions
 router.get('/users/:id/permissions', requireAdmin, (req, res) => {
-  const perms = db.prepare('SELECT module, has_access FROM user_permissions WHERE user_id=?').all(req.params.id);
+  const targetId = verifyOrgMembership(req, res);
+  if (targetId === null) return;
+
+  const perms = db.prepare('SELECT module, has_access FROM user_permissions WHERE user_id=?').all(targetId);
   const permMap = {};
   for (const mod of ALL_MODULES) permMap[mod] = 1;
   for (const p of perms) permMap[p.module] = p.has_access;
@@ -68,7 +95,8 @@ router.get('/users/:id/permissions', requireAdmin, (req, res) => {
 
 // UPDATE user permissions
 router.put('/users/:id/permissions', requireAdmin, (req, res) => {
-  const userId = Number(req.params.id);
+  const userId = verifyOrgMembership(req, res);
+  if (userId === null) return;
   const permissions = req.body;
   const upsert = db.prepare(`
     INSERT INTO user_permissions (user_id, module, has_access) VALUES (?, ?, ?)

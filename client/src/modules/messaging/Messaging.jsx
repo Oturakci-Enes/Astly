@@ -39,16 +39,23 @@ export default function Messaging() {
   const inputRef = useRef(null);
   const fileInputRef = useRef(null);
   const mediaRecorderRef = useRef(null);
+  const activeConvRef = useRef(null);
   const [isRecording, setIsRecording] = useState(false);
+  const prevMessagesLenRef = useRef(0);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    activeConvRef.current = activeConv;
+  }, [activeConv]);
 
   useEffect(() => {
     loadConversations();
     loadUsers();
-    // Poll for new messages every 3 seconds
+    // Poll for new messages every 5 seconds
     pollRef.current = setInterval(() => {
       loadConversations();
-      if (activeConv) loadMessages(activeConv.id, true);
-    }, 3000);
+      if (activeConvRef.current) loadMessages(activeConvRef.current.id, true);
+    }, 5000);
     return () => clearInterval(pollRef.current);
   }, []);
 
@@ -60,7 +67,11 @@ export default function Messaging() {
   }, [activeConv?.id]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // Only scroll to bottom when new messages actually arrive
+    if (messages.length > prevMessagesLenRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+    prevMessagesLenRef.current = messages.length;
   }, [messages]);
 
   const loadConversations = async () => {
@@ -235,8 +246,8 @@ export default function Messaging() {
   const totalUnread = conversations.reduce((s, c) => s + (c.unread_count || 0), 0);
 
   return (
-    <div className="p-6 h-[calc(100vh-2rem)]">
-      <div className="flex h-full bg-astra-surface border border-astra-border rounded-2xl overflow-hidden">
+    <div className="p-2 md:p-6 h-[calc(100vh-2rem)]">
+      <div className="flex h-full bg-astra-surface border border-astra-border rounded-2xl md:rounded-2xl rounded-xl overflow-hidden">
 
         {/* Left Panel — Conversations */}
         <div className={`w-80 border-r border-astra-border flex flex-col shrink-0 ${activeConv ? 'hidden md:flex' : 'flex'}`}>

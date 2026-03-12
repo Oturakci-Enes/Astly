@@ -56,13 +56,13 @@ export default function TaskManager() {
     if (filter.status) params.set('status', filter.status);
     if (filter.assigned_to) params.set('assigned_to', filter.assigned_to);
 
-    const [t, u, a, dr] = await Promise.all([
+    const [tasksData, u, a, dr] = await Promise.all([
       api(`/api/tasks?${params}`).then(r=>r.json()).catch(()=>[]),
       api('/api/tasks/users/list').then(r=>r.json()).catch(()=>[]),
       api('/api/tasks/announcements/list').then(r=>r.json()).catch(()=>[]),
       api('/api/tasks/daily-reports/list').then(r=>r.json()).catch(()=>[]),
     ]);
-    setTasks(t); setUsers(u); setAnnouncements(a); setDailyReports(dr);
+    setTasks(tasksData); setUsers(u); setAnnouncements(a); setDailyReports(dr);
 
     if (isAdmin) {
       const s = await api('/api/tasks/stats/performance').then(r=>r.json()).catch(()=>[]);
@@ -122,16 +122,16 @@ export default function TaskManager() {
     ...(isAdmin ? [{ id:'performance', label:t('tm_performance'), icon: BarChart3 }] : []),
   ];
 
-  const pendingTasks = tasks.filter(t=>t.status==='pending');
-  const inProgressTasks = tasks.filter(t=>t.status==='in_progress');
-  const completedTasks = tasks.filter(t=>t.status==='completed');
+  const pendingTasks = tasks.filter(tk=>tk.status==='pending');
+  const inProgressTasks = tasks.filter(tk=>tk.status==='in_progress');
+  const completedTasks = tasks.filter(tk=>tk.status==='completed');
 
   // ===== TASK DETAIL VIEW =====
   if (detailTask) {
-    const t = detailTask;
-    const SIcon = STATUS_ICON[t.status] || Circle;
+    const dt = detailTask;
+    const SIcon = STATUS_ICON[dt.status] || Circle;
     return (
-      <div className="p-6 space-y-4 max-w-3xl mx-auto">
+      <div className="p-4 md:p-6 space-y-4 max-w-3xl mx-auto">
         <button onClick={()=>setDetailTask(null)} className="flex items-center gap-2 text-sm text-astra-text-muted hover:text-accent">
           <ArrowLeft size={16}/> {t('tm_back')}
         </button>
@@ -139,34 +139,34 @@ export default function TaskManager() {
         <div className="astra-card p-5 space-y-4">
           <div className="flex items-start justify-between">
             <div>
-              <h2 className="text-lg font-bold text-astra-text">{t.title}</h2>
+              <h2 className="text-lg font-bold text-astra-text">{dt.title}</h2>
               <div className="flex items-center gap-2 mt-1">
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${PRIORITY_COLOR[t.priority]}`}>{PRIORITY[t.priority]}</span>
-                <span className="flex items-center gap-1 text-xs text-astra-text-muted"><SIcon size={12}/> {STATUS[t.status]}</span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${PRIORITY_COLOR[dt.priority]}`}>{PRIORITY[dt.priority]}</span>
+                <span className="flex items-center gap-1 text-xs text-astra-text-muted"><SIcon size={12}/> {STATUS[dt.status]}</span>
               </div>
             </div>
             <div className="flex gap-2">
-              {t.status === 'pending' && <button onClick={()=>updateTaskStatus(t.id,'in_progress')} className="text-xs px-3 py-1.5 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20">{t('tm_start')}</button>}
-              {t.status === 'in_progress' && <button onClick={()=>updateTaskStatus(t.id,'completed')} className="text-xs px-3 py-1.5 rounded-lg bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500/20">{t('tm_complete')}</button>}
-              {isAdmin && <button onClick={()=>deleteTask(t.id)} className="text-xs px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20"><Trash2 size={12}/></button>}
+              {dt.status === 'pending' && <button onClick={()=>updateTaskStatus(dt.id,'in_progress')} className="text-xs px-3 py-1.5 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20">{t('tm_start')}</button>}
+              {dt.status === 'in_progress' && <button onClick={()=>updateTaskStatus(dt.id,'completed')} className="text-xs px-3 py-1.5 rounded-lg bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500/20">{t('tm_complete')}</button>}
+              {isAdmin && <button onClick={()=>deleteTask(dt.id)} className="text-xs px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20"><Trash2 size={12}/></button>}
             </div>
           </div>
 
-          {t.description && <p className="text-sm text-astra-text-muted leading-relaxed">{t.description}</p>}
+          {dt.description && <p className="text-sm text-astra-text-muted leading-relaxed">{dt.description}</p>}
 
           <div className="grid grid-cols-2 gap-3 text-xs">
-            <div className="bg-astra-bg p-3 rounded-lg"><span className="text-astra-text-muted">{t('tm_assigned_to')}</span><p className="text-astra-text font-medium mt-0.5">{t.assigned_to_name || '—'}</p></div>
-            <div className="bg-astra-bg p-3 rounded-lg"><span className="text-astra-text-muted">{t('tm_assigned_by')}</span><p className="text-astra-text font-medium mt-0.5">{t.assigned_by_name || '—'}</p></div>
-            <div className="bg-astra-bg p-3 rounded-lg"><span className="text-astra-text-muted">{t('tm_due_date')}</span><p className="text-astra-text font-medium mt-0.5">{t.due_date || '—'}</p></div>
-            <div className="bg-astra-bg p-3 rounded-lg"><span className="text-astra-text-muted">{t('tm_created_at')}</span><p className="text-astra-text font-medium mt-0.5">{new Date(t.created_at).toLocaleDateString(locale)}</p></div>
+            <div className="bg-astra-bg p-3 rounded-lg"><span className="text-astra-text-muted">{t('tm_assigned_to')}</span><p className="text-astra-text font-medium mt-0.5">{dt.assigned_to_name || '—'}</p></div>
+            <div className="bg-astra-bg p-3 rounded-lg"><span className="text-astra-text-muted">{t('tm_assigned_by')}</span><p className="text-astra-text font-medium mt-0.5">{dt.assigned_by_name || '—'}</p></div>
+            <div className="bg-astra-bg p-3 rounded-lg"><span className="text-astra-text-muted">{t('tm_due_date')}</span><p className="text-astra-text font-medium mt-0.5">{dt.due_date || '—'}</p></div>
+            <div className="bg-astra-bg p-3 rounded-lg"><span className="text-astra-text-muted">{t('tm_created_at')}</span><p className="text-astra-text font-medium mt-0.5">{new Date(dt.created_at).toLocaleDateString(locale)}</p></div>
           </div>
         </div>
 
         {/* Comments */}
         <div className="astra-card overflow-hidden">
-          <div className="p-4 border-b border-astra-border"><p className="text-sm font-semibold text-astra-text flex items-center gap-2"><MessageSquare size={14}/> {t('tm_comments')} ({t.comments?.length || 0})</p></div>
+          <div className="p-4 border-b border-astra-border"><p className="text-sm font-semibold text-astra-text flex items-center gap-2"><MessageSquare size={14}/> {t('tm_comments')} ({dt.comments?.length || 0})</p></div>
           <div className="max-h-64 overflow-y-auto">
-            {(t.comments || []).map(c => (
+            {(dt.comments || []).map(c => (
               <div key={c.id} className="p-3 border-b border-astra-border last:border-0">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs font-semibold text-accent">{c.user_name}</span>
@@ -175,7 +175,7 @@ export default function TaskManager() {
                 <p className="text-xs text-astra-text">{c.content}</p>
               </div>
             ))}
-            {(!t.comments || !t.comments.length) && <div className="p-4 text-center text-xs text-astra-text-muted">{t('tm_no_comments')}</div>}
+            {(!dt.comments || !dt.comments.length) && <div className="p-4 text-center text-xs text-astra-text-muted">{t('tm_no_comments')}</div>}
           </div>
           <div className="p-3 border-t border-astra-border flex gap-2">
             <input className="astra-input flex-1 text-xs" placeholder={t('tm_write_comment')} value={commentText} onChange={e=>setCommentText(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addComment()}/>
@@ -187,7 +187,7 @@ export default function TaskManager() {
   }
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="p-4 md:p-6 space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -197,13 +197,13 @@ export default function TaskManager() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-astra-surface border border-astra-border rounded-xl p-1">
+      <div className="flex gap-1 bg-astra-surface border border-astra-border rounded-xl p-1 overflow-x-auto">
         {tabs.map(tb =>
             <button key={tb.id} onClick={()=>setTab(tb.id)}
-              className={`flex-1 flex items-center justify-center gap-2 text-xs font-medium py-2 rounded-lg transition-all ${
+              className={`flex-1 flex items-center justify-center gap-1.5 md:gap-2 text-[11px] md:text-xs font-medium py-2 rounded-lg transition-all whitespace-nowrap ${
                 tab === tb.id ? 'bg-accent/15 text-accent border border-accent/25' : 'text-astra-text-muted hover:text-astra-text'
               }`}>
-              <tb.icon size={14}/> {tb.label}
+              <tb.icon size={14}/> <span className="hidden sm:inline">{tb.label}</span>
           </button>
         )}
       </div>
@@ -212,13 +212,13 @@ export default function TaskManager() {
       {tab === 'tasks' && (
         <>
           {/* Filters + Add */}
-          <div className="flex items-center gap-3">
-            <select className="astra-select text-xs flex-1" value={filter.status} onChange={e=>{setFilter(f=>({...f,status:e.target.value})); setTimeout(load,0);}}>
+          <div className="flex flex-wrap items-center gap-2 md:gap-3">
+            <select className="astra-select text-xs flex-1 min-w-[120px]" value={filter.status} onChange={e=>{setFilter(f=>({...f,status:e.target.value})); setTimeout(load,0);}}>
               <option value="">{t('tm_all_statuses')}</option>
               {Object.entries(STATUS).map(([k,v])=><option key={k} value={k}>{v}</option>)}
             </select>
             {isAdmin && (
-              <select className="astra-select text-xs flex-1" value={filter.assigned_to} onChange={e=>{setFilter(f=>({...f,assigned_to:e.target.value})); setTimeout(load,0);}}>
+              <select className="astra-select text-xs flex-1 min-w-[120px]" value={filter.assigned_to} onChange={e=>{setFilter(f=>({...f,assigned_to:e.target.value})); setTimeout(load,0);}}>
                 <option value="">{t('tm_all_employees')}</option>
                 {users.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
@@ -227,7 +227,7 @@ export default function TaskManager() {
           </div>
 
           {/* Kanban Board */}
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {[
               { key:'pending', label:t('tm_pending'), items: pendingTasks, color:'text-yellow-400', bg:'bg-yellow-500/10', border:'border-yellow-500/20' },
               { key:'in_progress', label:t('tm_in_progress'), items: inProgressTasks, color:'text-blue-400', bg:'bg-blue-500/10', border:'border-blue-500/20' },
@@ -330,7 +330,7 @@ export default function TaskManager() {
       {/* ===== PERFORMANCE TAB (Admin only) ===== */}
       {tab === 'performance' && isAdmin && (
         <div className="space-y-4">
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {[
               { label:t('tm_total_tasks'), value: tasks.length, color:'text-accent' },
               { label:t('tm_completed'), value: completedTasks.length, color:'text-green-400' },
@@ -346,7 +346,8 @@ export default function TaskManager() {
 
           <div className="astra-card overflow-hidden">
             <div className="p-4 border-b border-astra-border"><p className="text-sm font-semibold text-astra-text">{t('tm_employee_perf')}</p></div>
-            <table className="w-full">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[600px]">
               <thead className="bg-astra-bg border-b border-astra-border">
                 <tr>
                   {[t('tm_employee'),t('tm_total'),t('tm_completed'),t('tm_progress'),t('tm_overdue'),t('tm_rate'),t('tm_avg_days')].map(h=>
@@ -375,6 +376,7 @@ export default function TaskManager() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       )}

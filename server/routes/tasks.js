@@ -69,6 +69,12 @@ router.post('/', (req, res) => {
   const { title, description, assigned_to, priority, due_date, category } = req.body;
   if (!title) return res.status(400).json({ error: 'Görev başlığı gerekli' });
 
+  // Verify assigned_to user belongs to same organization
+  if (assigned_to) {
+    const targetUser = db.prepare('SELECT id FROM users WHERE id = ? AND organization_id = ?').get(assigned_to, req.user.organization_id);
+    if (!targetUser) return res.status(400).json({ error: 'Gecersiz atanan kullanici' });
+  }
+
   const r = db.prepare(`
     INSERT INTO tasks (title, description, assigned_to, assigned_by, priority, due_date, category)
     VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -88,6 +94,12 @@ router.put('/:id', (req, res) => {
     WHERE t.id = ? AND org_user.organization_id = ?
   `).get(req.params.id, orgId);
   if (!task) return res.status(404).json({ error: 'Görev bulunamadı' });
+
+  // Verify assigned_to user belongs to same organization
+  if (assigned_to) {
+    const targetUser = db.prepare('SELECT id FROM users WHERE id = ? AND organization_id = ?').get(assigned_to, orgId);
+    if (!targetUser) return res.status(400).json({ error: 'Gecersiz atanan kullanici' });
+  }
 
   const completedAt = status === 'completed' && task.status !== 'completed'
     ? new Date().toISOString()
@@ -125,10 +137,18 @@ router.delete('/:id', (req, res) => {
   res.json({ message: 'Görev silindi' });
 });
 
-// Add comment
+// Add comment - verify task belongs to user's organization
 router.post('/:id/comments', (req, res) => {
   const { content } = req.body;
   if (!content) return res.status(400).json({ error: 'Yorum içeriği gerekli' });
+
+  const orgId = req.user.organization_id;
+  const task = db.prepare(`
+    SELECT t.id FROM tasks t
+    LEFT JOIN users org_user ON t.assigned_by = org_user.id
+    WHERE t.id = ? AND org_user.organization_id = ?
+  `).get(req.params.id, orgId);
+  if (!task) return res.status(404).json({ error: 'Görev bulunamadı' });
 
   db.prepare('INSERT INTO task_comments (task_id, user_id, content) VALUES (?, ?, ?)')
     .run(req.params.id, req.user.id, content);
@@ -191,6 +211,14 @@ router.post('/announcements', (req, res) => {
 });
 
 router.delete('/announcements/:id', (req, res) => {
+  const orgId = req.user.organization_id;
+  const ann = db.prepare(`
+    SELECT a.id FROM announcements a
+    JOIN users u ON a.created_by = u.id
+    WHERE a.id = ? AND u.organization_id = ?
+  `).get(req.params.id, orgId);
+  if (!ann) return res.status(404).json({ error: 'Duyuru bulunamadı' });
+
   db.prepare("UPDATE announcements SET status = 'archived' WHERE id = ?").run(req.params.id);
   res.json({ message: 'Duyuru kaldırıldı' });
 });

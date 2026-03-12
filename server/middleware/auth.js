@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
+import db from '../db/database.js';
 
-const JWT_SECRET = 'workos-secret-key-2025';
+const JWT_SECRET = process.env.JWT_SECRET || 'workos-secret-key-2025';
 
 export function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
@@ -12,7 +13,21 @@ export function authenticateToken(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
+
+    // Re-validate user from database to catch role/status changes
+    const user = db.prepare('SELECT id, name, email, role, organization_id, status FROM users WHERE id = ?').get(decoded.id);
+    if (!user || user.status === 'inactive') {
+      return res.status(401).json({ error: 'Hesap devre disi veya bulunamadi' });
+    }
+
+    // Use fresh data from DB instead of stale JWT claims
+    req.user = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      organization_id: user.organization_id,
+    };
     next();
   } catch {
     return res.status(403).json({ error: 'Gecersiz token' });

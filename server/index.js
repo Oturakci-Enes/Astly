@@ -14,8 +14,11 @@ import dashboardRoutes from './routes/dashboard.js';
 const app = express();
 const PORT = 3002;
 
-app.use(cors());
-app.use(express.json());
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',')
+  : ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:4173'];
+app.use(cors({ origin: allowedOrigins, credentials: true }));
+app.use(express.json({ limit: '1mb' }));
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -24,7 +27,12 @@ const uploadsDir = join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir);
 }
-app.use('/uploads', express.static(uploadsDir));
+app.use('/uploads', (req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Security-Policy', "default-src 'none'");
+  res.setHeader('Content-Disposition', 'inline');
+  next();
+}, authenticateToken, express.static(uploadsDir));
 
 // Public
 app.use('/api/auth', authRoutes);

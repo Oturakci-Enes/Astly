@@ -8,6 +8,34 @@ const router = Router();
 
 const ALL_MODULES = ['dashboard', 'tasks', 'messaging'];
 
+// Brute-force protection: track failed login attempts per IP
+const loginAttempts = new Map();
+const MAX_ATTEMPTS = 5;
+const LOCK_DURATION = 15 * 60 * 1000; // 15 minutes
+
+function checkBruteForce(ip) {
+  const record = loginAttempts.get(ip);
+  if (!record) return false;
+  if (Date.now() - record.firstAttempt > LOCK_DURATION) {
+    loginAttempts.delete(ip);
+    return false;
+  }
+  return record.count >= MAX_ATTEMPTS;
+}
+
+function recordFailedAttempt(ip) {
+  const record = loginAttempts.get(ip);
+  if (!record || Date.now() - record.firstAttempt > LOCK_DURATION) {
+    loginAttempts.set(ip, { count: 1, firstAttempt: Date.now() });
+  } else {
+    record.count++;
+  }
+}
+
+function clearAttempts(ip) {
+  loginAttempts.delete(ip);
+}
+
 function getUserPermissions(userId) {
   const perms = db.prepare('SELECT module, has_access FROM user_permissions WHERE user_id=?').all(userId);
   return perms.filter(p => p.has_access === 1).map(p => p.module);
@@ -19,8 +47,14 @@ router.post('/login', (req, res) => {
     return res.status(400).json({ error: 'Email ve şifre gerekli' });
   }
 
-  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+  const ip = req.ip;
+  if (checkBruteForce(ip)) {
+    return res.status(429).json({ error: 'Çok fazla başarısız deneme. 15 dakika sonra tekrar deneyin.' });
+  }
+
+  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email?.trim()?.toLowerCase());
   if (!user) {
+    recordFailedAttempt(ip);
     return res.status(401).json({ error: 'Geçersiz kimlik bilgileri' });
   }
 
@@ -30,8 +64,11 @@ router.post('/login', (req, res) => {
 
   const valid = bcrypt.compareSync(password, user.password);
   if (!valid) {
+    recordFailedAttempt(ip);
     return res.status(401).json({ error: 'Geçersiz kimlik bilgileri' });
   }
+
+  clearAttempts(ip);
 
   const permissions = getUserPermissions(user.id);
   const token = jwt.sign(
