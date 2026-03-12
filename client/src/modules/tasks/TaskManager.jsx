@@ -57,7 +57,8 @@ export default function TaskManager() {
 
   const load = async () => {
     const params = new URLSearchParams();
-    if (filter.status) params.set('status', filter.status);
+    // "overdue" is a virtual status — don't send it to backend
+    if (filter.status && filter.status !== 'overdue') params.set('status', filter.status);
     if (filter.assigned_to) params.set('assigned_to', filter.assigned_to);
 
     const [tasksData, u, a, dr] = await Promise.all([
@@ -126,8 +127,12 @@ export default function TaskManager() {
     ...(isManager ? [{ id:'performance', label:t('tm_performance'), icon: BarChart3 }] : []),
   ];
 
-  const pendingTasks = tasks.filter(tk=>tk.status==='pending');
-  const inProgressTasks = tasks.filter(tk=>tk.status==='in_progress');
+  const today = new Date().toISOString().slice(0, 10);
+  const isOverdue = (tk) => tk.due_date && tk.due_date < today && tk.status !== 'completed';
+  const filterIsOverdue = filter.status === 'overdue';
+  const overdueTasks = tasks.filter(isOverdue);
+  const pendingTasks = tasks.filter(tk=>tk.status==='pending' && !isOverdue(tk));
+  const inProgressTasks = tasks.filter(tk=>tk.status==='in_progress' && !isOverdue(tk));
   const completedTasks = tasks.filter(tk=>tk.status==='completed');
 
   // ===== TASK DETAIL VIEW =====
@@ -161,7 +166,7 @@ export default function TaskManager() {
           <div className="grid grid-cols-2 gap-3 text-xs">
             <div className="bg-astra-bg p-3 rounded-lg"><span className="text-astra-text-muted">{t('tm_assigned_to')}</span><p className="text-astra-text font-medium mt-0.5">{dt.assigned_to_name || '—'}</p></div>
             <div className="bg-astra-bg p-3 rounded-lg"><span className="text-astra-text-muted">{t('tm_assigned_by')}</span><p className="text-astra-text font-medium mt-0.5">{dt.assigned_by_name || '—'}</p></div>
-            <div className="bg-astra-bg p-3 rounded-lg"><span className="text-astra-text-muted">{t('tm_due_date')}</span><p className="text-astra-text font-medium mt-0.5">{dt.due_date || '—'}</p></div>
+            <div className="bg-astra-bg p-3 rounded-lg"><span className="text-astra-text-muted">{t('tm_due_date')}</span><p className={`font-medium mt-0.5 ${dt.due_date && dt.due_date < today && dt.status !== 'completed' ? 'text-red-400' : 'text-astra-text'}`}>{dt.due_date || '—'} {dt.due_date && dt.due_date < today && dt.status !== 'completed' && <span className="text-[10px]">({t('db_overdue')})</span>}</p></div>
             <div className="bg-astra-bg p-3 rounded-lg"><span className="text-astra-text-muted">{t('tm_created_at')}</span><p className="text-astra-text font-medium mt-0.5">{new Date(dt.created_at).toLocaleDateString(locale)}</p></div>
           </div>
         </div>
@@ -220,6 +225,7 @@ export default function TaskManager() {
             <select className="astra-select text-xs flex-1 min-w-[120px]" value={filter.status} onChange={e=>{setFilter(f=>({...f,status:e.target.value})); setTimeout(load,0);}}>
               <option value="">{t('tm_all_statuses')}</option>
               {Object.entries(STATUS).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+              <option value="overdue">{t('db_overdue')}</option>
             </select>
             {isManager && (
               <select className="astra-select text-xs flex-1 min-w-[120px]" value={filter.assigned_to} onChange={e=>{setFilter(f=>({...f,assigned_to:e.target.value})); setTimeout(load,0);}}>
@@ -230,8 +236,40 @@ export default function TaskManager() {
             <button onClick={()=>setShowTaskModal(true)} className="astra-btn-primary text-xs flex items-center gap-1.5 whitespace-nowrap"><Plus size={14}/> {t('tm_new_task')}</button>
           </div>
 
-          {/* Kanban Board */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Overdue Banner - shown when there are overdue tasks OR when overdue filter is active */}
+          {(overdueTasks.length > 0 || filterIsOverdue) && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-xs font-bold text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+                <AlertTriangle size={14}/> {t('db_overdue')} <span className="ml-auto bg-black/20 px-1.5 py-0.5 rounded text-[10px]">{overdueTasks.length}</span>
+              </div>
+              {overdueTasks.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                  {overdueTasks.map(task => (
+                    <div key={task.id} onClick={()=>openTaskDetail(task.id)}
+                      className="astra-card p-3 cursor-pointer hover:border-red-500/30 border-red-500/15 transition-all group">
+                      <div className="flex items-start justify-between mb-1.5">
+                        <h4 className="text-xs font-semibold text-astra-text group-hover:text-red-400 transition-colors leading-tight">{task.title}</h4>
+                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border shrink-0 ml-2 ${PRIORITY_COLOR[task.priority]}`}>{PRIORITY[task.priority]}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] text-astra-text-muted">
+                        <span className="flex items-center gap-1"><User size={10}/> {task.assigned_to_name || t('tm_not_assigned')}</span>
+                        <span className="flex items-center gap-0.5 text-red-400"><Calendar size={10}/> {task.due_date}</span>
+                      </div>
+                      <div className="flex gap-1.5 mt-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e=>e.stopPropagation()}>
+                        {task.status === 'pending' && <button onClick={()=>updateTaskStatus(task.id,'in_progress')} className="text-[10px] px-2 py-0.5 rounded bg-blue-500/15 text-blue-400 hover:bg-blue-500/25">{t('tm_start')}</button>}
+                        {task.status === 'in_progress' && <button onClick={()=>updateTaskStatus(task.id,'completed')} className="text-[10px] px-2 py-0.5 rounded bg-green-500/15 text-green-400 hover:bg-green-500/25">{t('tm_complete')}</button>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center text-[10px] text-astra-text-muted py-6 border border-dashed border-astra-border rounded-xl">{t('tm_no_tasks')}</div>
+              )}
+            </div>
+          )}
+
+          {/* Kanban Board - hidden when overdue filter is active */}
+          {!filterIsOverdue && <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {[
               { key:'pending', label:t('tm_pending'), items: pendingTasks, color:'text-yellow-400', bg:'bg-yellow-500/10', border:'border-yellow-500/20' },
               { key:'in_progress', label:t('tm_in_progress'), items: inProgressTasks, color:'text-blue-400', bg:'bg-blue-500/10', border:'border-blue-500/20' },
@@ -272,7 +310,7 @@ export default function TaskManager() {
                 </div>
               );
             })}
-          </div>
+          </div>}
         </>
       )}
 
