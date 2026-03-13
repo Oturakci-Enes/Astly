@@ -94,6 +94,22 @@ const tr = {
   msg_group_name: 'Grup adı', msg_search_people: 'Kişi ara...',
   msg_create_group: 'Grup Oluştur', msg_members: 'üye',
   msg_yesterday: 'Dün', msg_general: 'Genel',
+
+  // Calls
+  msg_voice_call: 'Sesli Arama',
+  msg_video_call: 'Görüntülü Arama',
+  msg_incoming_call: 'Gelen Arama',
+  msg_calling: 'Aranıyor...',
+  msg_call_ended: 'Arama Sonlandı',
+  msg_accept_call: 'Kabul Et',
+  msg_reject_call: 'Reddet',
+  msg_end_call: 'Aramayı Bitir',
+  msg_mute: 'Sessiz',
+  msg_unmute: 'Sesi Aç',
+  msg_camera_on: 'Kamera Aç',
+  msg_camera_off: 'Kamera Kapat',
+  msg_is_calling: 'sizi arıyor...',
+  msg_user_offline: 'Kullanıcı çevrimdışı',
 };
 
 export default tr;

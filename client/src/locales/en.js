@@ -94,6 +94,22 @@ const en = {
   msg_group_name: 'Group name', msg_search_people: 'Search people...',
   msg_create_group: 'Create Group', msg_members: 'members',
   msg_yesterday: 'Yesterday', msg_general: 'General',
+
+  // Calls
+  msg_voice_call: 'Voice Call',
+  msg_video_call: 'Video Call',
+  msg_incoming_call: 'Incoming Call',
+  msg_calling: 'Calling...',
+  msg_call_ended: 'Call Ended',
+  msg_accept_call: 'Accept',
+  msg_reject_call: 'Reject',
+  msg_end_call: 'End Call',
+  msg_mute: 'Mute',
+  msg_unmute: 'Unmute',
+  msg_camera_on: 'Camera On',
+  msg_camera_off: 'Camera Off',
+  msg_is_calling: 'is calling you...',
+  msg_user_offline: 'User is offline',
 };
 
 export default en;

@@ -1,10 +1,13 @@
 import express from 'express';
 import cors from 'cors';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
+import jwt from 'jsonwebtoken';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import fs from 'fs';
 import db from './db/database.js';
-import { authenticateToken } from './middleware/auth.js';
+import { authenticateToken, JWT_SECRET } from './middleware/auth.js';
 import authRoutes from './routes/auth.js';
 import tasksRoutes from './routes/tasks.js';
 import messagingRoutes from './routes/messaging.js';
@@ -52,6 +55,84 @@ if (userCount.c === 0) {
   }).catch(e => console.error('Seed hatası:', e));
 }
 
-app.listen(PORT, () => {
+// ─── HTTP Server + Socket.io (WebRTC Signaling) ────────────────────────
+const server = createServer(app);
+const io = new Server(server, {
+  cors: { origin: allowedOrigins, credentials: true },
+});
+
+// Socket authentication middleware — verify JWT
+io.use((socket, next) => {
+  const token = socket.handshake.auth.token;
+  if (!token) return next(new Error('Authentication required'));
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const user = db.prepare("SELECT id, name, email, role, organization_id FROM users WHERE id = ? AND status = 'active'").get(decoded.id);
+    if (!user) return next(new Error('User not found'));
+    socket.user = user;
+    next();
+  } catch {
+    next(new Error('Invalid token'));
+  }
+});
+
+// Online users map: userId → socketId
+const onlineUsers = new Map();
+
+io.on('connection', (socket) => {
+  const userId = socket.user.id;
+  onlineUsers.set(userId, socket.id);
+
+  // Caller sends call offer to target user
+  socket.on('call-user', ({ to, type, offer }) => {
+    const targetSocket = onlineUsers.get(to);
+    if (targetSocket) {
+      io.to(targetSocket).emit('incoming-call', {
+        from: userId,
+        fromName: socket.user.name,
+        type,
+        offer,
+      });
+    }
+  });
+
+  // Callee accepts the call
+  socket.on('call-accepted', ({ to, answer }) => {
+    const targetSocket = onlineUsers.get(to);
+    if (targetSocket) {
+      io.to(targetSocket).emit('call-accepted', { answer });
+    }
+  });
+
+  // Callee rejects the call
+  socket.on('call-rejected', ({ to }) => {
+    const targetSocket = onlineUsers.get(to);
+    if (targetSocket) {
+      io.to(targetSocket).emit('call-rejected', {});
+    }
+  });
+
+  // Either party ends the call
+  socket.on('call-ended', ({ to }) => {
+    const targetSocket = onlineUsers.get(to);
+    if (targetSocket) {
+      io.to(targetSocket).emit('call-ended', {});
+    }
+  });
+
+  // ICE candidate exchange for WebRTC
+  socket.on('ice-candidate', ({ to, candidate }) => {
+    const targetSocket = onlineUsers.get(to);
+    if (targetSocket) {
+      io.to(targetSocket).emit('ice-candidate', { candidate });
+    }
+  });
+
+  socket.on('disconnect', () => {
+    onlineUsers.delete(userId);
+  });
+});
+
+server.listen(PORT, () => {
   console.log(`🚀 Work OS Server · Port ${PORT}`);
 });

@@ -130,7 +130,7 @@ router.post('/conversations', (req, res) => {
   res.status(201).json({ id: result, message: 'Sohbet oluşturuldu' });
 });
 
-// Get messages
+// Get messages — with read receipts
 router.get('/conversations/:id/messages', (req, res) => {
   const userId = req.user.id;
   const convId = req.params.id;
@@ -146,10 +146,29 @@ router.get('/conversations/:id/messages', (req, res) => {
     ORDER BY m.created_at ASC
   `).all(convId);
 
+  // Get all members' last_read_at (excluding current user) for read receipts
+  const otherMembers = db.prepare(`
+    SELECT cm.user_id, cm.last_read_at, u.name
+    FROM conversation_members cm
+    JOIN users u ON cm.user_id = u.id
+    WHERE cm.conversation_id = ? AND cm.user_id != ?
+  `).all(convId, userId);
+
+  // For each message sent by current user, check who has read it
+  const messagesWithReadStatus = messages.map(msg => {
+    if (msg.sender_id === userId) {
+      const readBy = otherMembers.filter(m => m.last_read_at && m.last_read_at >= msg.created_at);
+      const allRead = readBy.length === otherMembers.length && otherMembers.length > 0;
+      return { ...msg, read_by: readBy.map(r => ({ id: r.user_id, name: r.name })), all_read: allRead };
+    }
+    return msg;
+  });
+
+  // Update current user's last_read_at
   db.prepare('UPDATE conversation_members SET last_read_at = CURRENT_TIMESTAMP WHERE conversation_id = ? AND user_id = ?')
     .run(convId, userId);
 
-  res.json(messages);
+  res.json(messagesWithReadStatus);
 });
 
 // Send message (text, media, audio, location)

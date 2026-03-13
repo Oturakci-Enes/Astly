@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useLocale } from '../../context/LocaleContext';
+import { io } from 'socket.io-client';
 import {
   MessageSquare,
   Plus,
@@ -15,11 +16,19 @@ import {
   ArrowLeft,
   Paperclip,
   Mic,
-  MapPin
+  MapPin,
+  Phone,
+  Video,
+  PhoneOff,
+  MicOff,
+  VideoOff,
+  PhoneIncoming
 } from 'lucide-react';
 
+const ICE_SERVERS = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
 export default function Messaging() {
-  const { api, user: currentUser } = useAuth();
+  const { api, user: currentUser, token } = useAuth();
   const { t, locale } = useLocale();
   const [conversations, setConversations] = useState([]);
   const [activeConv, setActiveConv] = useState(null);
@@ -43,10 +52,30 @@ export default function Messaging() {
   const [isRecording, setIsRecording] = useState(false);
   const prevMessagesLenRef = useRef(0);
 
-  // Keep ref in sync with state
+  // ─── Call state ──────────────────────────────────────────────────────
+  const [callState, setCallState] = useState('idle'); // idle | calling | incoming | active
+  const [callType, setCallType] = useState(null);     // 'voice' | 'video'
+  const [callPeer, setCallPeer] = useState(null);     // { id, name }
+  const [isMuted, setIsMuted] = useState(false);
+  const [isCameraOff, setIsCameraOff] = useState(false);
+  const [callDuration, setCallDuration] = useState(0);
+  const socketRef = useRef(null);
+  const peerConnectionRef = useRef(null);
+  const localStreamRef = useRef(null);
+  const localVideoRef = useRef(null);
+  const remoteVideoRef = useRef(null);
+  const callTimerRef = useRef(null);
+  const pendingOfferRef = useRef(null);
+  const callStateRef = useRef('idle');
+
+  // Keep refs in sync with state
   useEffect(() => {
     activeConvRef.current = activeConv;
   }, [activeConv]);
+
+  useEffect(() => {
+    callStateRef.current = callState;
+  }, [callState]);
 
   useEffect(() => {
     loadConversations();
@@ -74,6 +103,224 @@ export default function Messaging() {
     prevMessagesLenRef.current = messages.length;
   }, [messages]);
 
+  // ─── Socket.io connection for WebRTC signaling ──────────────────────
+  useEffect(() => {
+    if (!token) return;
+    const socket = io(window.location.origin.replace(/:\d+$/, ':3002'), {
+      auth: { token },
+      transports: ['websocket', 'polling'],
+    });
+    socketRef.current = socket;
+
+    socket.on('incoming-call', ({ from, fromName, type, offer }) => {
+      // If already in a call, reject automatically
+      if (callStateRef.current !== 'idle') {
+        socket.emit('call-rejected', { to: from });
+        return;
+      }
+      pendingOfferRef.current = offer;
+      setCallState('incoming');
+      setCallType(type);
+      setCallPeer({ id: from, name: fromName });
+    });
+
+    socket.on('call-accepted', async ({ answer }) => {
+      try {
+        if (peerConnectionRef.current) {
+          await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+          setCallState('active');
+        }
+      } catch (err) {
+        console.error('Error setting remote description:', err);
+      }
+    });
+
+    socket.on('call-rejected', () => {
+      cleanupCall();
+    });
+
+    socket.on('call-ended', () => {
+      cleanupCall();
+    });
+
+    socket.on('ice-candidate', async ({ candidate }) => {
+      try {
+        if (peerConnectionRef.current && candidate) {
+          await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+        }
+      } catch (err) {
+        console.error('Error adding ICE candidate:', err);
+      }
+    });
+
+    return () => {
+      socket.disconnect();
+      socketRef.current = null;
+    };
+  }, [token]);
+
+  // Call duration timer
+  useEffect(() => {
+    if (callState === 'active') {
+      setCallDuration(0);
+      callTimerRef.current = setInterval(() => {
+        setCallDuration(d => d + 1);
+      }, 1000);
+    } else {
+      if (callTimerRef.current) {
+        clearInterval(callTimerRef.current);
+        callTimerRef.current = null;
+      }
+    }
+    return () => {
+      if (callTimerRef.current) clearInterval(callTimerRef.current);
+    };
+  }, [callState]);
+
+  // ─── Call functions ─────────────────────────────────────────────────
+  const cleanupCall = () => {
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(t => t.stop());
+      localStreamRef.current = null;
+    }
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
+    pendingOfferRef.current = null;
+    setCallState('idle');
+    setCallType(null);
+    setCallPeer(null);
+    setIsMuted(false);
+    setIsCameraOff(false);
+    setCallDuration(0);
+  };
+
+  const initiateCall = async (type) => {
+    if (!activeConv || activeConv.type !== 'direct') return;
+    const peer = activeConv.members?.find(m => m.id !== currentUser.id);
+    if (!peer) return;
+
+    try {
+      const constraints = { audio: true, video: type === 'video' };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      localStreamRef.current = stream;
+
+      const pc = new RTCPeerConnection(ICE_SERVERS);
+      peerConnectionRef.current = pc;
+
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+      pc.onicecandidate = (e) => {
+        if (e.candidate) {
+          socketRef.current?.emit('ice-candidate', { to: peer.id, candidate: e.candidate });
+        }
+      };
+
+      pc.ontrack = (e) => {
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = e.streams[0];
+        }
+      };
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      socketRef.current?.emit('call-user', { to: peer.id, type, offer });
+
+      setCallState('calling');
+      setCallType(type);
+      setCallPeer({ id: peer.id, name: peer.name });
+
+      if (localVideoRef.current && type === 'video') {
+        localVideoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      console.error('Call initiation failed:', err);
+      cleanupCall();
+    }
+  };
+
+  const acceptCall = async () => {
+    try {
+      const offer = pendingOfferRef.current;
+      if (!offer) return;
+
+      const constraints = { audio: true, video: callType === 'video' };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      localStreamRef.current = stream;
+
+      const pc = new RTCPeerConnection(ICE_SERVERS);
+      peerConnectionRef.current = pc;
+
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+      pc.onicecandidate = (e) => {
+        if (e.candidate) {
+          socketRef.current?.emit('ice-candidate', { to: callPeer.id, candidate: e.candidate });
+        }
+      };
+
+      pc.ontrack = (e) => {
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = e.streams[0];
+        }
+      };
+
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+
+      socketRef.current?.emit('call-accepted', { to: callPeer.id, answer });
+
+      setCallState('active');
+
+      if (localVideoRef.current && callType === 'video') {
+        localVideoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      console.error('Accept call failed:', err);
+      cleanupCall();
+    }
+  };
+
+  const rejectCall = () => {
+    socketRef.current?.emit('call-rejected', { to: callPeer?.id });
+    cleanupCall();
+  };
+
+  const endCall = () => {
+    socketRef.current?.emit('call-ended', { to: callPeer?.id });
+    cleanupCall();
+  };
+
+  const toggleMute = () => {
+    if (localStreamRef.current) {
+      const audioTrack = localStreamRef.current.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled;
+        setIsMuted(!audioTrack.enabled);
+      }
+    }
+  };
+
+  const toggleCamera = () => {
+    if (localStreamRef.current) {
+      const videoTrack = localStreamRef.current.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.enabled = !videoTrack.enabled;
+        setIsCameraOff(!videoTrack.enabled);
+      }
+    }
+  };
+
+  const formatCallDuration = (s) => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+  };
+
+  // ─── Messaging functions ────────────────────────────────────────────
   const loadConversations = async () => {
     const data = await api('/api/messaging/conversations').then(r=>r.json()).catch(()=>[]);
     setConversations(data);
@@ -171,7 +418,7 @@ export default function Messaging() {
 
   const sendMessage = async () => {
     if ((!newMessage.trim() && !attachment) || !activeConv) return;
-    
+
     let body;
     if (attachment) {
       body = new FormData();
@@ -325,7 +572,7 @@ export default function Messaging() {
                     : <span className="text-accent text-[10px] font-bold">{(activeConv.display_name||'?').charAt(0).toUpperCase()}</span>
                   }
                 </div>
-                <div>
+                <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-astra-text">{activeConv.display_name}</p>
                   <p className="text-[10px] text-astra-text-muted">
                     {activeConv.type === 'group'
@@ -333,6 +580,25 @@ export default function Messaging() {
                       : activeConv.members?.find(m=>m.id!==currentUser.id)?.role || ''}
                   </p>
                 </div>
+                {/* Call buttons — only for direct chats */}
+                {activeConv.type === 'direct' && callState === 'idle' && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => initiateCall('voice')}
+                      className="p-2 rounded-lg text-astra-text-muted hover:text-accent hover:bg-accent/10 transition-colors"
+                      title={t('msg_voice_call')}
+                    >
+                      <Phone size={18}/>
+                    </button>
+                    <button
+                      onClick={() => initiateCall('video')}
+                      className="p-2 rounded-lg text-astra-text-muted hover:text-accent hover:bg-accent/10 transition-colors"
+                      title={t('msg_video_call')}
+                    >
+                      <Video size={18}/>
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Messages */}
@@ -390,9 +656,17 @@ export default function Messaging() {
                             msg.content
                           )}
                         </div>
-                        <p className={`text-[9px] text-astra-text-muted mt-0.5 ${isMine ? 'text-right mr-1' : 'ml-1'}`}>
-                          {new Date(msg.created_at).toLocaleTimeString(locale, { hour:'2-digit', minute:'2-digit' })}
-                        </p>
+                        {/* Time + Read receipts */}
+                        <div className={`flex items-center gap-1 mt-0.5 ${isMine ? 'justify-end mr-1' : 'ml-1'}`}>
+                          <span className="text-[9px] text-astra-text-muted">
+                            {new Date(msg.created_at).toLocaleTimeString(locale, { hour:'2-digit', minute:'2-digit' })}
+                          </span>
+                          {isMine && (
+                            msg.all_read
+                              ? <CheckCheck size={14} className="text-blue-400"/>
+                              : <Check size={14} className="text-white/50"/>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
@@ -411,7 +685,7 @@ export default function Messaging() {
             ) : (
               <img src={attachmentPreview} alt="preview" className="h-16 w-16 object-cover rounded-lg border border-astra-border" />
             )}
-                    <button 
+                    <button
                       onClick={clearAttachment}
                       className="absolute -top-1.5 -right-1.5 bg-red-500 text-white p-0.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
                     >
@@ -427,7 +701,7 @@ export default function Messaging() {
                     ref={fileInputRef}
                     onChange={handleFileChange}
                   />
-                  <button 
+                  <button
                     onClick={() => fileInputRef.current?.click()}
                     className="text-astra-text-muted hover:text-accent p-2 rounded-full hover:bg-accent/10 transition-colors"
                   >
@@ -479,6 +753,116 @@ export default function Messaging() {
           )}
         </div>
       </div>
+
+      {/* ─── Incoming Call Modal ─────────────────────────────────────── */}
+      {callState === 'incoming' && callPeer && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-[60] flex items-center justify-center p-4">
+          <div className="bg-astra-surface border border-astra-border rounded-3xl p-8 text-center max-w-sm w-full shadow-2xl animate-pulse-slow">
+            <div className="w-20 h-20 rounded-full bg-accent/20 border-2 border-accent/40 flex items-center justify-center mx-auto mb-4">
+              {callType === 'video' ? <Video size={32} className="text-accent"/> : <Phone size={32} className="text-accent"/>}
+            </div>
+            <h3 className="text-lg font-bold text-astra-text mb-1">{callPeer.name}</h3>
+            <p className="text-sm text-astra-text-muted mb-6">
+              {callType === 'video' ? t('msg_video_call') : t('msg_voice_call')} — {t('msg_is_calling')}
+            </p>
+            <div className="flex justify-center gap-6">
+              <button
+                onClick={rejectCall}
+                className="w-14 h-14 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center transition-colors shadow-lg"
+                title={t('msg_reject_call')}
+              >
+                <PhoneOff size={24}/>
+              </button>
+              <button
+                onClick={acceptCall}
+                className="w-14 h-14 rounded-full bg-green-500 hover:bg-green-600 text-white flex items-center justify-center transition-colors shadow-lg animate-bounce"
+                title={t('msg_accept_call')}
+              >
+                <Phone size={24}/>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Calling / Active Call Overlay ────────────────────────────── */}
+      {(callState === 'calling' || callState === 'active') && callPeer && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[60] flex flex-col items-center justify-center">
+          {/* Video containers */}
+          {callType === 'video' && (
+            <>
+              {/* Remote video — full screen background */}
+              <video
+                ref={remoteVideoRef}
+                autoPlay
+                playsInline
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+              {/* Local video — small picture-in-picture */}
+              <video
+                ref={localVideoRef}
+                autoPlay
+                playsInline
+                muted
+                className="absolute top-4 right-4 w-32 h-24 md:w-48 md:h-36 rounded-xl object-cover border-2 border-white/20 shadow-xl z-10"
+              />
+            </>
+          )}
+
+          {/* Voice call or calling state info */}
+          {(callType === 'voice' || callState === 'calling') && (
+            <div className="text-center z-10 mb-12">
+              <div className="w-24 h-24 rounded-full bg-accent/20 border-2 border-accent/40 flex items-center justify-center mx-auto mb-4">
+                <span className="text-accent text-2xl font-bold">{callPeer.name?.charAt(0).toUpperCase()}</span>
+              </div>
+              <h3 className="text-xl font-bold text-white mb-1">{callPeer.name}</h3>
+              <p className="text-sm text-white/60">
+                {callState === 'calling' ? t('msg_calling') : formatCallDuration(callDuration)}
+              </p>
+            </div>
+          )}
+
+          {/* Active video call duration badge */}
+          {callState === 'active' && callType === 'video' && (
+            <div className="absolute top-4 left-4 bg-black/50 backdrop-blur-sm rounded-full px-3 py-1 z-10">
+              <p className="text-xs text-white font-mono">{formatCallDuration(callDuration)}</p>
+            </div>
+          )}
+
+          {/* Call controls */}
+          <div className="absolute bottom-8 left-0 right-0 flex justify-center gap-4 z-10">
+            <button
+              onClick={toggleMute}
+              className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors shadow-lg ${
+                isMuted ? 'bg-white text-black' : 'bg-white/20 text-white hover:bg-white/30'
+              }`}
+              title={isMuted ? t('msg_unmute') : t('msg_mute')}
+            >
+              {isMuted ? <MicOff size={20}/> : <Mic size={20}/>}
+            </button>
+
+            {callType === 'video' && (
+              <button
+                onClick={toggleCamera}
+                className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors shadow-lg ${
+                  isCameraOff ? 'bg-white text-black' : 'bg-white/20 text-white hover:bg-white/30'
+                }`}
+                title={isCameraOff ? t('msg_camera_on') : t('msg_camera_off')}
+              >
+                {isCameraOff ? <VideoOff size={20}/> : <Video size={20}/>}
+              </button>
+            )}
+
+            <button
+              onClick={endCall}
+              className="w-14 h-14 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center transition-colors shadow-lg"
+              title={t('msg_end_call')}
+            >
+              <PhoneOff size={22}/>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* New Chat Modal */}
       {showNewChat && (
