@@ -3,6 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import db from '../db/database.js';
+import { sendNotificationToMany } from '../helpers/notifications.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -224,6 +225,24 @@ router.post('/conversations/:id/messages', upload.single('attachment'), (req, re
     SELECT m.*, u.name as sender_name FROM messages m
     JOIN users u ON m.sender_id = u.id WHERE m.id = ?
   `).get(r.lastInsertRowid);
+
+  // Send notification to other conversation members
+  const members = db.prepare('SELECT user_id FROM conversation_members WHERE conversation_id = ? AND user_id != ?')
+    .all(convId, userId);
+  const conv = db.prepare('SELECT name, type FROM conversations WHERE id = ?').get(convId);
+  const memberIds = members.map(m => m.user_id);
+  if (memberIds.length > 0) {
+    const msgPreview = (content?.trim() || '').substring(0, 50);
+    const displayTitle = conv?.type === 'group' ? (conv.name || 'Group') : req.user.name;
+    sendNotificationToMany(req.app, memberIds, {
+      orgId: req.user.organization_id,
+      type: 'new_message',
+      title: displayTitle,
+      message: msgPreview || (messageType !== 'text' ? `[${messageType}]` : ''),
+      referenceId: Number(convId),
+      referenceType: 'conversation',
+    });
+  }
 
   res.status(201).json(message);
 });

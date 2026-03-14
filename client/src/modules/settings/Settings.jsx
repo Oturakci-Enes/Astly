@@ -2,42 +2,66 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useLocale } from '../../context/LocaleContext';
 import { useTheme } from '../../context/ThemeContext';
-import { Users, Plus, X, Lock, Sun, Moon, Globe } from 'lucide-react';
+import { Users, Plus, X, Lock, Sun, Moon, Globe, Trash2 } from 'lucide-react';
+
+const POWER_SCORES = { admin: 100, senior_manager: 80, manager: 60, senior_user: 40, user: 20 };
 
 export default function Settings() {
   const { api, user: currentUser } = useAuth();
   const { t, locale, setLocale, availableLocales } = useLocale();
   const { theme, setTheme, themes } = useTheme();
-  const [tab, setTab] = useState(currentUser?.role === 'admin' ? 'users' : 'profile');
+
+  const canManage = (POWER_SCORES[currentUser?.role] || 0) >= 60;
+  const isAdminUser = currentUser?.role === 'admin';
+
+  const [tab, setTab] = useState(canManage ? 'users' : 'profile');
   const [users, setUsers] = useState([]);
+  const [creatableRoles, setCreatableRoles] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [editUser, setEditUser] = useState(null);
   const [form, setForm] = useState({ name:'', email:'', password:'', role:'user', department:'', phone:'' });
   const [pwForm, setPwForm] = useState({ currentPassword:'', newPassword:'', confirmPassword:'' });
   const [pwMsg, setPwMsg] = useState('');
 
-  const isAdmin = currentUser?.role === 'admin';
-
-  useEffect(() => { loadUsers(); }, []);
+  useEffect(() => { loadUsers(); loadCreatableRoles(); }, []);
 
   const loadUsers = async () => {
     const data = await api('/api/settings/users').then(r=>r.json()).catch(()=>[]);
     setUsers(data);
   };
 
+  const loadCreatableRoles = async () => {
+    if (!canManage) return;
+    const data = await api('/api/settings/creatable-roles').then(r=>r.json()).catch(()=>({ roles: [] }));
+    setCreatableRoles(data.roles || []);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     const url = editUser ? `/api/settings/users/${editUser.id}` : '/api/settings/users';
     const method = editUser ? 'PUT' : 'POST';
-    await api(url, { method, body: JSON.stringify(form) });
-    setShowModal(false); setEditUser(null); setForm({ name:'', email:'', password:'', role:'user', department:'', phone:'' });
-    loadUsers();
+    const res = await api(url, { method, body: JSON.stringify(form) });
+    if (res.ok) {
+      setShowModal(false); setEditUser(null); setForm({ name:'', email:'', password:'', role: creatableRoles[creatableRoles.length - 1] || 'user', department:'', phone:'' });
+      loadUsers();
+    }
   };
 
   const openEdit = (u) => {
+    // Can only edit users with lower power
+    const userPower = POWER_SCORES[currentUser?.role] || 0;
+    const targetPower = POWER_SCORES[u.role] || 0;
+    if (targetPower >= userPower) return;
     setEditUser(u);
     setForm({ name:u.name, email:u.email, password:'', role:u.role, department:u.department||'', phone:u.phone||'' });
     setShowModal(true);
+  };
+
+  const handleDelete = async (u) => {
+    if (!isAdminUser) return;
+    if (!confirm(t('confirm_delete_user'))) return;
+    await api(`/api/settings/users/${u.id}`, { method: 'DELETE' });
+    loadUsers();
   };
 
   const changePassword = async (e) => {
@@ -50,8 +74,14 @@ export default function Settings() {
     else { const err = await res.json(); setPwMsg(err.error); }
   };
 
+  const canEditUser = (u) => {
+    const userPower = POWER_SCORES[currentUser?.role] || 0;
+    const targetPower = POWER_SCORES[u.role] || 0;
+    return targetPower < userPower;
+  };
+
   const tabs = [
-    ...(isAdmin ? [{ id:'users', label:t('users'), icon:Users }] : []),
+    ...(canManage ? [{ id:'users', label:t('users'), icon:Users }] : []),
     { id:'profile', label:t('profile_password'), icon:Lock },
     { id:'appearance', label:t('theme'), icon:Sun },
   ];
@@ -73,10 +103,10 @@ export default function Settings() {
       </div>
 
       {/* Users Tab */}
-      {tab === 'users' && isAdmin && (
+      {tab === 'users' && canManage && (
         <div className="space-y-3">
           <div className="flex justify-end">
-            <button onClick={()=>{setEditUser(null);setForm({name:'',email:'',password:'',role:'user',department:'',phone:''});setShowModal(true);}} className="astra-btn-primary text-xs flex items-center gap-1.5">
+            <button onClick={()=>{setEditUser(null);setForm({name:'',email:'',password:'',role: creatableRoles[creatableRoles.length - 1] || 'user',department:'',phone:''});setShowModal(true);}} className="astra-btn-primary text-xs flex items-center gap-1.5">
               <Plus size={14}/> {t('add_user')}
             </button>
           </div>
@@ -104,7 +134,14 @@ export default function Settings() {
                       </span>
                     </td>
                     <td className="astra-table-cell">
-                      <button onClick={()=>openEdit(u)} className="text-xs text-accent hover:underline">{t('edit')}</button>
+                      <div className="flex items-center gap-2">
+                        {canEditUser(u) && (
+                          <button onClick={()=>openEdit(u)} className="text-xs text-accent hover:underline">{t('edit')}</button>
+                        )}
+                        {isAdminUser && u.id !== currentUser.id && (
+                          <button onClick={()=>handleDelete(u)} className="text-xs text-red-400 hover:underline"><Trash2 size={12}/></button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -199,11 +236,9 @@ export default function Settings() {
                 <div>
                   <label className="astra-label">{t('role')}</label>
                   <select className="astra-select" value={form.role} onChange={e=>setForm(f=>({...f,role:e.target.value}))}>
-                    <option value="admin">{t('role_admin')}</option>
-                    <option value="senior_manager">{t('role_senior_manager')}</option>
-                    <option value="manager">{t('role_manager')}</option>
-                    <option value="senior_user">{t('role_senior_user')}</option>
-                    <option value="user">{t('role_user')}</option>
+                    {creatableRoles.map(r => (
+                      <option key={r} value={r}>{t(`role_${r}`)}</option>
+                    ))}
                   </select>
                 </div>
                 <div>

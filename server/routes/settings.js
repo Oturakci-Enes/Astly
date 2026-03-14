@@ -1,13 +1,20 @@
 import express from 'express';
 import db from '../db/database.js';
 import bcrypt from 'bcryptjs';
-import { canManageUsers, isValidRole, getPowerScore } from '../helpers/powerScore.js';
+import { canManageUsers, isValidRole, getPowerScore, getCreatableRoles, isAdmin } from '../helpers/powerScore.js';
 const router = express.Router();
 
 const ALL_MODULES = ['dashboard', 'tasks', 'messaging'];
 
-function requireAdmin(req, res, next) {
-  if (!canManageUsers(req.user.role)) return res.status(403).json({ error: 'Sadece admin' });
+// Manager+ can manage users (power >= 60)
+function requireManager(req, res, next) {
+  if (!canManageUsers(req.user.role)) return res.status(403).json({ error: 'Yetkiniz yok' });
+  next();
+}
+
+// Admin only (power === 100) - for destructive ops
+function requireAdminOnly(req, res, next) {
+  if (!isAdmin(req.user.role)) return res.status(403).json({ error: 'Sadece admin' });
   next();
 }
 
@@ -21,14 +28,25 @@ router.get('/users', (req, res) => {
   );
 });
 
+// GET creatable roles for the current user
+router.get('/creatable-roles', requireManager, (req, res) => {
+  const roles = getCreatableRoles(req.user.role);
+  res.json({ roles });
+});
+
 // CREATE user
-router.post('/users', requireAdmin, (req, res) => {
+router.post('/users', requireManager, (req, res) => {
   const { name, email, password, role, department, phone } = req.body;
 
-  // Validate role
   const userRole = role || 'user';
   if (!isValidRole(userRole)) {
     return res.status(400).json({ error: 'Geçersiz rol' });
+  }
+
+  // Validate: can only create roles with STRICTLY lower power
+  const creatableRoles = getCreatableRoles(req.user.role);
+  if (!creatableRoles.includes(userRole)) {
+    return res.status(403).json({ error: 'Bu rolde kullanıcı oluşturamazsınız' });
   }
 
   const hashed = bcrypt.hashSync(password, 10);
@@ -47,24 +65,34 @@ router.post('/users', requireAdmin, (req, res) => {
 function verifyOrgMembership(req, res) {
   const targetId = Number(req.params.id);
   const orgId = req.user.organization_id;
-  const target = db.prepare('SELECT id FROM users WHERE id = ? AND organization_id = ?').get(targetId, orgId);
+  const target = db.prepare('SELECT id, role FROM users WHERE id = ? AND organization_id = ?').get(targetId, orgId);
   if (!target) {
     res.status(404).json({ error: 'Kullanıcı bulunamadı' });
     return null;
   }
-  return targetId;
+  return target;
 }
 
 // UPDATE user
-router.put('/users/:id', requireAdmin, (req, res) => {
-  const targetId = verifyOrgMembership(req, res);
-  if (targetId === null) return;
+router.put('/users/:id', requireManager, (req, res) => {
+  const target = verifyOrgMembership(req, res);
+  if (target === null) return;
+  const targetId = target.id;
 
   const { name, email, role, department, phone, status, password } = req.body;
 
   // Validate role if provided
   if (role && !isValidRole(role)) {
     return res.status(400).json({ error: 'Geçersiz rol' });
+  }
+
+  // Can only edit users with strictly lower power, and set roles strictly lower
+  const creatableRoles = getCreatableRoles(req.user.role);
+  if (!creatableRoles.includes(target.role) && target.id !== req.user.id) {
+    return res.status(403).json({ error: 'Bu kullanıcıyı düzenleme yetkiniz yok' });
+  }
+  if (role && !creatableRoles.includes(role)) {
+    return res.status(403).json({ error: 'Bu rolü atama yetkiniz yok' });
   }
 
   if (password) {
@@ -78,10 +106,11 @@ router.put('/users/:id', requireAdmin, (req, res) => {
   res.json({ message: 'Kullanıcı güncellendi' });
 });
 
-// DELETE user
-router.delete('/users/:id', requireAdmin, (req, res) => {
-  const targetId = verifyOrgMembership(req, res);
-  if (targetId === null) return;
+// DELETE user (admin only)
+router.delete('/users/:id', requireAdminOnly, (req, res) => {
+  const target = verifyOrgMembership(req, res);
+  if (target === null) return;
+  const targetId = target.id;
   if (targetId === req.user.id) return res.status(400).json({ error: 'Kendinizi silemezsiniz' });
 
   const deleteUser = db.transaction(() => {
@@ -96,11 +125,11 @@ router.delete('/users/:id', requireAdmin, (req, res) => {
 });
 
 // GET user permissions
-router.get('/users/:id/permissions', requireAdmin, (req, res) => {
-  const targetId = verifyOrgMembership(req, res);
-  if (targetId === null) return;
+router.get('/users/:id/permissions', requireManager, (req, res) => {
+  const target = verifyOrgMembership(req, res);
+  if (target === null) return;
 
-  const perms = db.prepare('SELECT module, has_access FROM user_permissions WHERE user_id=?').all(targetId);
+  const perms = db.prepare('SELECT module, has_access FROM user_permissions WHERE user_id=?').all(target.id);
   const permMap = {};
   for (const mod of ALL_MODULES) permMap[mod] = 1;
   for (const p of perms) permMap[p.module] = p.has_access;
@@ -108,9 +137,10 @@ router.get('/users/:id/permissions', requireAdmin, (req, res) => {
 });
 
 // UPDATE user permissions
-router.put('/users/:id/permissions', requireAdmin, (req, res) => {
-  const userId = verifyOrgMembership(req, res);
-  if (userId === null) return;
+router.put('/users/:id/permissions', requireManager, (req, res) => {
+  const target = verifyOrgMembership(req, res);
+  if (target === null) return;
+  const userId = target.id;
   const permissions = req.body;
   const upsert = db.prepare(`
     INSERT INTO user_permissions (user_id, module, has_access) VALUES (?, ?, ?)

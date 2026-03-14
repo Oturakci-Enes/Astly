@@ -42,7 +42,7 @@ export default function TaskManager() {
   const [showAnnModal, setShowAnnModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [detailTask, setDetailTask] = useState(null);
-  const [taskForm, setTaskForm] = useState({ title:'', description:'', assigned_to:'', priority:'medium', due_date:'', category:'' });
+  const [taskForm, setTaskForm] = useState({ title:'', description:'', assigned_to:[], priority:'medium', due_date:'', category:'' });
   const [annForm, setAnnForm] = useState({ title:'', content:'', priority:'normal' });
   const [reportForm, setReportForm] = useState({ content:'', tasks_completed:0, tasks_in_progress:0, issues:'' });
   const [commentText, setCommentText] = useState('');
@@ -79,7 +79,7 @@ export default function TaskManager() {
     e.preventDefault();
     const res = await api('/api/tasks', { method:'POST', body: JSON.stringify(taskForm) });
     if (!res.ok) { const err = await res.json(); return alert(err.error); }
-    setShowTaskModal(false); setTaskForm({ title:'', description:'', assigned_to:'', priority:'medium', due_date:'', category:'' }); load();
+    setShowTaskModal(false); setTaskForm({ title:'', description:'', assigned_to:[], priority:'medium', due_date:'', category:'' }); load();
   };
 
   const updateTaskStatus = async (id, status) => {
@@ -437,12 +437,44 @@ export default function TaskManager() {
             <textarea className="astra-input h-20 resize-none" placeholder={t('tm_details_ph')} value={taskForm.description} onChange={e=>setTaskForm(f=>({...f,description:e.target.value}))}/>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div>
+            <div className="col-span-2">
               <label className="astra-label">{t('tm_assignee')}</label>
-              <select className="astra-select" value={taskForm.assigned_to} onChange={e=>setTaskForm(f=>({...f,assigned_to:e.target.value}))}>
-                <option value="">{t('tm_select_person')}</option>
-                {users.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
+              {/* Selected users as chips */}
+              {taskForm.assigned_to.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {taskForm.assigned_to.map(uid => {
+                    const u = users.find(u => u.id === Number(uid));
+                    return u ? (
+                      <span key={uid} className="inline-flex items-center gap-1 bg-accent/15 text-accent text-[11px] font-medium px-2 py-1 rounded-full border border-accent/25">
+                        {u.name}
+                        <button type="button" onClick={() => setTaskForm(f => ({ ...f, assigned_to: f.assigned_to.filter(id => id !== uid) }))} className="hover:text-red-400">×</button>
+                      </span>
+                    ) : null;
+                  })}
+                </div>
+              )}
+              {/* User checkboxes */}
+              <div className="bg-astra-bg border border-astra-border rounded-lg max-h-32 overflow-y-auto">
+                {users.map(u => (
+                  <label key={u.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-astra-muted/30 cursor-pointer text-xs text-astra-text">
+                    <input
+                      type="checkbox"
+                      checked={taskForm.assigned_to.includes(String(u.id))}
+                      onChange={(e) => {
+                        const uid = String(u.id);
+                        setTaskForm(f => ({
+                          ...f,
+                          assigned_to: e.target.checked
+                            ? [...f.assigned_to, uid]
+                            : f.assigned_to.filter(id => id !== uid)
+                        }));
+                      }}
+                      className="rounded border-astra-border text-accent focus:ring-accent/30"
+                    />
+                    {u.name}
+                  </label>
+                ))}
+              </div>
             </div>
             <div>
               <label className="astra-label">{t('tm_priority')}</label>

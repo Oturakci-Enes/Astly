@@ -1,14 +1,17 @@
-export default function WorkOSLogo({ size = 36, showText = true, collapsed = false }) {
+export default function WorkOSLogo({ size = 36, showText = true, collapsed = false, forceDark = false }) {
   const uid = `astly_${size}`;
   const isLarge = size >= 48;
 
+  const textColor = forceDark ? 'text-white' : 'text-astra-text';
+  const subColor = forceDark ? 'text-purple-300' : 'text-purple-600';
+
   const titleClass = isLarge
-    ? 'text-astra-text font-bold text-2xl tracking-tight'
-    : 'text-astra-text font-semibold text-base tracking-tight';
+    ? `${textColor} font-bold text-2xl tracking-tight`
+    : `${textColor} font-semibold text-base tracking-tight`;
 
   const subtitleClass = isLarge
-    ? 'text-[11px] text-purple-600 font-medium tracking-[0.2em] uppercase'
-    : 'text-[9px] text-purple-600 font-medium tracking-[0.18em] uppercase';
+    ? `text-[11px] ${subColor} font-medium tracking-[0.2em] uppercase`
+    : `text-[9px] ${subColor} font-medium tracking-[0.18em] uppercase`;
 
   return (
     <div className="flex items-center gap-3 select-none">

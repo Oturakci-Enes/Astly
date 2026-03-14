@@ -13,6 +13,7 @@ import tasksRoutes from './routes/tasks.js';
 import messagingRoutes from './routes/messaging.js';
 import settingsRoutes from './routes/settings.js';
 import dashboardRoutes from './routes/dashboard.js';
+import notificationsRoutes from './routes/notifications.js';
 
 const app = express();
 const PORT = 3002;
@@ -45,6 +46,7 @@ app.use('/api/dashboard', authenticateToken, dashboardRoutes);
 app.use('/api/tasks', authenticateToken, tasksRoutes);
 app.use('/api/messaging', authenticateToken, messagingRoutes);
 app.use('/api/settings', authenticateToken, settingsRoutes);
+app.use('/api/notifications', authenticateToken, notificationsRoutes);
 
 // Auto-seed on first run
 const userCount = db.prepare('SELECT COUNT(*) as c FROM users').get();
@@ -55,11 +57,18 @@ if (userCount.c === 0) {
   }).catch(e => console.error('Seed hatası:', e));
 }
 
-// ─── HTTP Server + Socket.io (WebRTC Signaling) ────────────────────────
+// ─── HTTP Server + Socket.io ────────────────────────────────────────────
 const server = createServer(app);
 const io = new Server(server, {
   cors: { origin: allowedOrigins, credentials: true },
 });
+
+// Online users map: userId → { socketId, orgId }
+const onlineUsers = new Map();
+
+// Make io and onlineUsers available to route handlers via app.locals
+app.locals.io = io;
+app.locals.onlineUsers = onlineUsers;
 
 // Socket authentication middleware — verify JWT
 io.use((socket, next) => {
@@ -76,18 +85,37 @@ io.use((socket, next) => {
   }
 });
 
-// Online users map: userId → socketId
-const onlineUsers = new Map();
+// ─── REST endpoint: get online user IDs for same org ────────────────────
+app.get('/api/online-users', authenticateToken, (req, res) => {
+  const orgId = req.user.organization_id;
+  const ids = [];
+  onlineUsers.forEach((val, uid) => {
+    if (val.orgId === orgId) ids.push(uid);
+  });
+  res.json({ online: ids });
+});
 
 io.on('connection', (socket) => {
-  const userId = socket.user.id;
-  onlineUsers.set(userId, socket.id);
+  const { id: userId, organization_id: orgId } = socket.user;
 
-  // Caller sends call offer to target user
+  onlineUsers.set(userId, { socketId: socket.id, orgId });
+  socket.join(`org:${orgId}`);
+
+  // Send current online users list to the new connection
+  const orgOnlineIds = [];
+  onlineUsers.forEach((val, uid) => {
+    if (val.orgId === orgId) orgOnlineIds.push(uid);
+  });
+  socket.emit('online-users-list', { users: orgOnlineIds });
+
+  // Broadcast to others in same org
+  socket.to(`org:${orgId}`).emit('user-online', { userId });
+
+  // ─── WebRTC call signaling ──────────────────────────────────────────
   socket.on('call-user', ({ to, type, offer }) => {
-    const targetSocket = onlineUsers.get(to);
-    if (targetSocket) {
-      io.to(targetSocket).emit('incoming-call', {
+    const target = onlineUsers.get(to);
+    if (target) {
+      io.to(target.socketId).emit('incoming-call', {
         from: userId,
         fromName: socket.user.name,
         type,
@@ -96,40 +124,29 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Callee accepts the call
   socket.on('call-accepted', ({ to, answer }) => {
-    const targetSocket = onlineUsers.get(to);
-    if (targetSocket) {
-      io.to(targetSocket).emit('call-accepted', { answer });
-    }
+    const target = onlineUsers.get(to);
+    if (target) io.to(target.socketId).emit('call-accepted', { answer });
   });
 
-  // Callee rejects the call
   socket.on('call-rejected', ({ to }) => {
-    const targetSocket = onlineUsers.get(to);
-    if (targetSocket) {
-      io.to(targetSocket).emit('call-rejected', {});
-    }
+    const target = onlineUsers.get(to);
+    if (target) io.to(target.socketId).emit('call-rejected', {});
   });
 
-  // Either party ends the call
   socket.on('call-ended', ({ to }) => {
-    const targetSocket = onlineUsers.get(to);
-    if (targetSocket) {
-      io.to(targetSocket).emit('call-ended', {});
-    }
+    const target = onlineUsers.get(to);
+    if (target) io.to(target.socketId).emit('call-ended', {});
   });
 
-  // ICE candidate exchange for WebRTC
   socket.on('ice-candidate', ({ to, candidate }) => {
-    const targetSocket = onlineUsers.get(to);
-    if (targetSocket) {
-      io.to(targetSocket).emit('ice-candidate', { candidate });
-    }
+    const target = onlineUsers.get(to);
+    if (target) io.to(target.socketId).emit('ice-candidate', { candidate });
   });
 
   socket.on('disconnect', () => {
     onlineUsers.delete(userId);
+    io.to(`org:${orgId}`).emit('user-offline', { userId });
   });
 });
 

@@ -23,6 +23,7 @@ const tr = {
   // Dashboard
   db_total_tasks: 'Toplam Görev', db_completed: 'Tamamlanan', db_in_progress: 'Devam Eden',
   db_overdue: 'Geciken', db_active_users: 'Aktif Kullanıcı', db_messages: 'Mesaj',
+  db_online_users: 'Çevrimiçi', db_unread_messages: 'Okunmamış',
   db_urgent_tasks: 'Acil Görevler', db_recent_tasks: 'Son Görevler',
   db_view_all: 'Tümünü Gör', db_no_urgent: 'Acil görev yok',
   db_no_tasks: 'Henüz görev yok', db_manage_tasks: 'Görevleri yönet ve takip et',
@@ -110,6 +111,23 @@ const tr = {
   msg_camera_off: 'Kamera Kapat',
   msg_is_calling: 'sizi arıyor...',
   msg_user_offline: 'Kullanıcı çevrimdışı',
+  msg_online: 'Çevrimiçi', msg_offline: 'Çevrimdışı',
+  msg_group_call: 'Grup Araması',
+
+  // Notifications
+  notif_title: 'Bildirimler',
+  notif_mark_all_read: 'Tümünü okundu işaretle',
+  notif_no_notifications: 'Bildirim yok',
+  notif_task_assigned: 'Görev',
+  notif_announcement: 'Duyuru',
+  notif_new_message: 'Mesaj',
+  notif_incoming_call: 'Arama',
+  notif_just_now: 'Az önce',
+  notif_minutes_ago: 'dk önce',
+  notif_hours_ago: 'sa önce',
+
+  // Settings extras
+  confirm_delete_user: 'Bu kullanıcıyı silmek istediğinize emin misiniz?',
 };
 
 export default tr;

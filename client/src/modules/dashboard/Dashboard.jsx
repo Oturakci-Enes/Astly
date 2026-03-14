@@ -1,17 +1,21 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useLocale } from '../../context/LocaleContext';
-import { ClipboardList, MessageSquare, Users, Clock, CheckCircle, AlertTriangle, ArrowRight } from 'lucide-react';
+import { useSocket } from '../../context/SocketContext';
+import { ClipboardList, MessageSquare, Users, Clock, CheckCircle, AlertTriangle, ArrowRight, Wifi } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export default function Dashboard() {
   const { api } = useAuth();
   const { t, locale } = useLocale();
+  const { onlineUsers } = useSocket() || {};
   const navigate = useNavigate();
   const [data, setData] = useState(null);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     api('/api/dashboard').then(r => r.json()).then(setData).catch(() => {});
+    api('/api/messaging/unread-count').then(r => r.json()).then(d => setUnreadCount(d.unread || 0)).catch(() => {});
   }, []);
 
   if (!data) return (
@@ -21,14 +25,15 @@ export default function Dashboard() {
   );
 
   const { stats, recentTasks, urgentTasks } = data;
+  const onlineCount = onlineUsers?.size || 0;
 
   const statCards = [
     { label: t('db_total_tasks'), value: stats.totalTasks, icon: ClipboardList, color: 'text-accent', bg: 'bg-accent/10', border: 'border-accent/20' },
     { label: t('db_completed'), value: stats.completedTasks, icon: CheckCircle, color: 'text-green-400', bg: 'bg-green-500/10', border: 'border-green-500/20' },
     { label: t('db_in_progress'), value: stats.inProgressTasks, icon: Clock, color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/20' },
     { label: t('db_overdue'), value: stats.overdueTasks, icon: AlertTriangle, color: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/20' },
-    { label: t('db_active_users'), value: stats.totalUsers, icon: Users, color: 'text-purple-400', bg: 'bg-purple-500/10', border: 'border-purple-500/20' },
-    { label: t('db_messages'), value: stats.totalMessages, icon: MessageSquare, color: 'text-orange-400', bg: 'bg-orange-500/10', border: 'border-orange-500/20' },
+    { label: t('db_online_users'), value: onlineCount, icon: Wifi, color: 'text-green-400', bg: 'bg-green-500/10', border: 'border-green-500/20' },
+    { label: t('db_unread_messages'), value: unreadCount, icon: MessageSquare, color: 'text-orange-400', bg: 'bg-orange-500/10', border: 'border-orange-500/20' },
   ];
 
   const PRIORITY_COLOR = { urgent:'text-red-400', high:'text-orange-400', medium:'text-blue-400', low:'text-slate-400' };

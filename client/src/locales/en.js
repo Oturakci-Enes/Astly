@@ -23,6 +23,7 @@ const en = {
   // Dashboard
   db_total_tasks: 'Total Tasks', db_completed: 'Completed', db_in_progress: 'In Progress',
   db_overdue: 'Overdue', db_active_users: 'Active Users', db_messages: 'Messages',
+  db_online_users: 'Online', db_unread_messages: 'Unread',
   db_urgent_tasks: 'Urgent Tasks', db_recent_tasks: 'Recent Tasks',
   db_view_all: 'View All', db_no_urgent: 'No urgent tasks',
   db_no_tasks: 'No tasks yet', db_manage_tasks: 'Manage and track tasks',
@@ -110,6 +111,23 @@ const en = {
   msg_camera_off: 'Camera Off',
   msg_is_calling: 'is calling you...',
   msg_user_offline: 'User is offline',
+  msg_online: 'Online', msg_offline: 'Offline',
+  msg_group_call: 'Group Call',
+
+  // Notifications
+  notif_title: 'Notifications',
+  notif_mark_all_read: 'Mark all read',
+  notif_no_notifications: 'No notifications',
+  notif_task_assigned: 'Task',
+  notif_announcement: 'Announcement',
+  notif_new_message: 'Message',
+  notif_incoming_call: 'Call',
+  notif_just_now: 'Just now',
+  notif_minutes_ago: 'min ago',
+  notif_hours_ago: 'hr ago',
+
+  // Settings extras
+  confirm_delete_user: 'Are you sure you want to delete this user?',
 };
 
 export default en;

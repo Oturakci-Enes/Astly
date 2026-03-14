@@ -45,8 +45,19 @@ export function canDeleteAnnouncement(role) {
   return getPowerScore(role) >= 60;
 }
 
-// Can manage users in settings? (admin only, power === 100)
+// Can manage users in settings? (manager and above, power >= 60)
 export function canManageUsers(role) {
+  return getPowerScore(role) >= 60;
+}
+
+// Get roles that a user can create (strictly lower power only)
+export function getCreatableRoles(role) {
+  const requesterPower = getPowerScore(role);
+  return VALID_ROLES.filter(r => POWER_SCORES[r] < requesterPower);
+}
+
+// Is admin? (power === 100, for delete-level operations)
+export function isAdmin(role) {
   return getPowerScore(role) === 100;
 }
 

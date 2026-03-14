@@ -109,3 +109,15 @@ body {
     @apply px-4 py-3 text-sm text-astra-text;
   }
 }
+
+/* Mobile safe area for keyboard-aware messaging */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Prevent iOS bounce/overscroll on messaging container */
+@supports (-webkit-touch-callout: none) {
+  .overscroll-contain {
+    -webkit-overflow-scrolling: touch;
+  }
+}

@@ -1,6 +1,7 @@
 import express from 'express';
 import db from '../db/database.js';
 import { getPowerScore, canSee, canAssignTo, canDeleteTask, canPublishAnnouncement, canDeleteAnnouncement, getVisibleRolesSQL } from '../helpers/powerScore.js';
+import { sendNotification, sendNotificationToMany } from '../helpers/notifications.js';
 const router = express.Router();
 
 // =====================
@@ -111,6 +112,20 @@ router.post('/', (req, res) => {
 
   try {
     createTasks(assignees);
+    // Send notifications to assignees
+    for (const userId of assignees) {
+      if (userId && userId !== req.user.id) {
+        sendNotification(req.app, {
+          userId: Number(userId),
+          orgId: req.user.organization_id,
+          type: 'task_assigned',
+          title: title,
+          message: `${req.user.name}`,
+          referenceId: null,
+          referenceType: 'task',
+        });
+      }
+    }
     res.status(201).json({ message: 'Görev(ler) başarıyla oluşturuldu' });
   } catch (error) {
     console.error("Görev oluşturma hatası:", error);
@@ -270,6 +285,19 @@ router.post('/announcements', (req, res) => {
 
   const r = db.prepare('INSERT INTO announcements (title, content, priority, created_by, expires_at) VALUES (?,?,?,?,?)')
     .run(title, content, priority || 'normal', req.user.id, expires_at || null);
+
+  // Send notification to all org users
+  const orgUsers = db.prepare("SELECT id FROM users WHERE organization_id = ? AND status = 'active' AND id != ?")
+    .all(req.user.organization_id, req.user.id);
+  const userIds = orgUsers.map(u => u.id);
+  sendNotificationToMany(req.app, userIds, {
+    orgId: req.user.organization_id,
+    type: 'announcement',
+    title: title,
+    message: `${req.user.name}`,
+    referenceId: r.lastInsertRowid,
+    referenceType: 'announcement',
+  });
 
   res.status(201).json({ id: r.lastInsertRowid, message: 'Duyuru yayınlandı' });
 });

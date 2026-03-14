@@ -64,7 +64,7 @@ export default function Login() {
       <div className="w-full max-w-[400px] relative z-10">
         <div className="text-center mb-8">
           <div className="flex justify-center mb-5">
-            <WorkOSLogo size={64} showText={true} />
+            <WorkOSLogo size={64} showText={true} forceDark={true} />
           </div>
           <p className="text-gray-300 text-sm mt-3">{t('login_subtitle')}</p>
         </div>

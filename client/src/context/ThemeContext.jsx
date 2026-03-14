@@ -9,7 +9,7 @@ const THEMES = [
 
 export function ThemeProvider({ children }) {
   const [theme, setThemeState] = useState(() => {
-    return localStorage.getItem('workos-theme') || 'dark';
+    return localStorage.getItem('workos-theme') || 'light';
   });
 
   const setTheme = (t) => {
