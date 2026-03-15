@@ -48,14 +48,22 @@ app.use('/api/messaging', authenticateToken, messagingRoutes);
 app.use('/api/settings', authenticateToken, settingsRoutes);
 app.use('/api/notifications', authenticateToken, notificationsRoutes);
 
-// Auto-seed on first run
-const userCount = db.prepare('SELECT COUNT(*) as c FROM users').get();
-if (userCount.c === 0) {
-  console.log('📦 İlk çalışma — örnek veri yükleniyor...');
-  import('./db/seed.js').then(() => {
-    console.log('✅ Seed tamamlandı!');
-  }).catch(e => console.error('Seed hatası:', e));
-}
+// Auto-seed on first run - Tabloların oluşması için 2 saniye bekler
+setTimeout(async () => {
+  try {
+    const result = await db.query('SELECT COUNT(*) as c FROM users');
+    const count = parseInt(result.rows[0].c, 10);
+
+    if (count === 0) {
+      console.log('📦 İlk çalışma - örnek veri yükleniyor...');
+      import('./db/seed.js').then(() => {
+        console.log('✅ Seed tamamlandı!');
+      }).catch(e => console.error('Seed hatası:', e));
+    }
+  } catch (error) {
+    console.error('Veritabanı kontrol hatası:', error);
+  }
+}, 2000);
 
 // ─── HTTP Server + Socket.io ────────────────────────────────────────────
 const server = createServer(app);
@@ -70,13 +78,17 @@ const onlineUsers = new Map();
 app.locals.io = io;
 app.locals.onlineUsers = onlineUsers;
 
-// Socket authentication middleware — verify JWT
-io.use((socket, next) => {
+// Socket authentication middleware — verify JWT (async)
+io.use(async (socket, next) => {
   const token = socket.handshake.auth.token;
   if (!token) return next(new Error('Authentication required'));
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    const user = db.prepare("SELECT id, name, email, role, organization_id FROM users WHERE id = ? AND status = 'active'").get(decoded.id);
+    const result = await db.query(
+      "SELECT id, name, email, role, organization_id FROM users WHERE id = $1 AND status = 'active'",
+      [decoded.id]
+    );
+    const user = result.rows[0];
     if (!user) return next(new Error('User not found'));
     socket.user = user;
     next();

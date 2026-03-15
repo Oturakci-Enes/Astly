@@ -60,7 +60,7 @@ export default function Login() {
       </div>
       <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-purple-600/20 rounded-full blur-[120px] pointer-events-none mix-blend-screen" />
       <div className="absolute bottom-1/4 right-1/4 w-[600px] h-[600px] bg-blue-600/10 rounded-full blur-[150px] pointer-events-none mix-blend-screen" />
-      
+
       <div className="w-full max-w-[400px] relative z-10">
         <div className="text-center mb-8">
           <div className="flex justify-center mb-5">
@@ -71,6 +71,7 @@ export default function Login() {
 
         <form
           onSubmit={handleSubmit}
+          noValidate
           className="bg-black/40 backdrop-blur-xl rounded-2xl p-8 border border-white/10 shadow-2xl"
         >
           {error && (

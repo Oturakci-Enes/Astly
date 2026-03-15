@@ -3,7 +3,7 @@ import db from '../db/database.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'workos-secret-key-2025';
 
-export function authenticateToken(req, res, next) {
+export async function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
@@ -15,7 +15,12 @@ export function authenticateToken(req, res, next) {
     const decoded = jwt.verify(token, JWT_SECRET);
 
     // Re-validate user from database to catch role/status changes
-    const user = db.prepare('SELECT id, name, email, role, organization_id, status FROM users WHERE id = ?').get(decoded.id);
+    const result = await db.query(
+      'SELECT id, name, email, role, organization_id, status FROM users WHERE id = $1',
+      [decoded.id]
+    );
+    const user = result.rows[0];
+
     if (!user || user.status === 'inactive') {
       return res.status(401).json({ error: 'Hesap devre disi veya bulunamadi' });
     }

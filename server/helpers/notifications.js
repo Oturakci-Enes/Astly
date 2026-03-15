@@ -5,16 +5,17 @@ import db from '../db/database.js';
  * @param {Object} app - Express app instance (has app.locals.io and app.locals.onlineUsers)
  * @param {Object} opts - { userId, orgId, type, title, message, referenceId, referenceType }
  */
-export function sendNotification(app, { userId, orgId, type, title, message, referenceId, referenceType }) {
+export async function sendNotification(app, { userId, orgId, type, title, message, referenceId, referenceType }) {
   try {
     // Insert into DB
-    const result = db.prepare(`
-      INSERT INTO notifications (user_id, organization_id, type, title, message, reference_id, reference_type)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(userId, orgId, type, title, message || null, referenceId || null, referenceType || null);
+    const result = await db.query(
+      `INSERT INTO notifications (user_id, organization_id, type, title, message, reference_id, reference_type)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+      [userId, orgId, type, title, message || null, referenceId || null, referenceType || null]
+    );
 
     const notification = {
-      id: result.lastInsertRowid,
+      id: result.rows[0].id,
       user_id: userId,
       type,
       title,
@@ -45,8 +46,8 @@ export function sendNotification(app, { userId, orgId, type, title, message, ref
 /**
  * Send notification to multiple users
  */
-export function sendNotificationToMany(app, userIds, { orgId, type, title, message, referenceId, referenceType }) {
+export async function sendNotificationToMany(app, userIds, { orgId, type, title, message, referenceId, referenceType }) {
   for (const userId of userIds) {
-    sendNotification(app, { userId, orgId, type, title, message, referenceId, referenceType });
+    await sendNotification(app, { userId, orgId, type, title, message, referenceId, referenceType });
   }
 }
